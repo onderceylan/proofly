@@ -21,7 +21,7 @@ export default defineManifest({
   },
   content_scripts: [{
     js: ['src/content/main.ts'],
-    matches: ['https://*/*'],
+    matches: ['https://*/*', 'http://*/*'],
   }],
   permissions: [
     'sidePanel',

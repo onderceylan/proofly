@@ -23,6 +23,7 @@ export class ContentHighlighter {
   private popover: CorrectionPopover | null = null;
   private clickHandlers = new Map<HTMLElement, (e: MouseEvent) => void>();
   private onCorrectionAppliedCallbacks = new Map<HTMLElement, (updatedCorrections: ProofreadCorrection[]) => void>();
+  private applyCorrectionCallbacks = new Map<HTMLElement, (element: HTMLElement, correction: ProofreadCorrection) => void>();
 
   constructor() {
     this.initializeHighlights();
@@ -31,6 +32,10 @@ export class ContentHighlighter {
 
   setOnCorrectionApplied(element: HTMLElement, callback: (updatedCorrections: ProofreadCorrection[]) => void): void {
     this.onCorrectionAppliedCallbacks.set(element, callback);
+  }
+
+  setApplyCorrectionCallback(element: HTMLElement, callback: (element: HTMLElement, correction: ProofreadCorrection) => void): void {
+    this.applyCorrectionCallbacks.set(element, callback);
   }
 
   private initializeHighlights(): void {
@@ -199,6 +204,15 @@ export class ContentHighlighter {
   }
 
   private applyCorrection(element: HTMLElement, correction: ProofreadCorrection): void {
+    // Check if there's a callback to handle the correction application
+    const applyCallback = this.applyCorrectionCallbacks.get(element);
+    if (applyCallback) {
+      // Delegate to the callback (ProofreadingManager) which knows how to handle mirrors
+      applyCallback(element, correction);
+      return;
+    }
+
+    // Fallback: apply directly (for non-mirror elements)
     const text = this.getElementText(element);
     const newText =
       text.substring(0, correction.startIndex) +
@@ -393,10 +407,11 @@ if ('highlights' in CSS) {
     const colors = CORRECTION_TYPE_COLORS[errorType];
     return `
     ::highlight(${errorType}) {
-      background-color: ${colors.background};
+      background-color: transparent;
       text-decoration: underline;
       text-decoration-color: ${colors.color};
       text-decoration-thickness: 2px;
+      text-decoration-style: wavy;
     }`;
   }).join('\n');
 

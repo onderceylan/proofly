@@ -4,6 +4,7 @@ export class CorrectionPopover extends HTMLElement {
   private contentElement: HTMLDivElement | null = null;
   private currentCorrection: ProofreadCorrection | null = null;
   private onApply: ((correction: ProofreadCorrection) => void) | null = null;
+  private clickOutsideHandler: ((e: MouseEvent) => void) | null = null;
 
   constructor() {
     super();
@@ -25,12 +26,51 @@ export class CorrectionPopover extends HTMLElement {
   }
 
   show(x: number, y: number): void {
+    // Show popover first to get its dimensions
+    this.showPopover();
+
+    // Get popover dimensions
+    const rect = this.getBoundingClientRect();
+    const margin = 10; // Minimum margin from viewport edge
+
+    // Adjust x to keep popover within viewport (horizontal bounds)
+    if (x + rect.width > window.innerWidth) {
+      x = window.innerWidth - rect.width - margin;
+    }
+    if (x < margin) {
+      x = margin;
+    }
+
+    // Adjust y to keep popover within viewport (vertical bounds)
+    if (y + rect.height > window.innerHeight + window.scrollY) {
+      y = window.innerHeight + window.scrollY - rect.height - margin;
+    }
+    if (y < window.scrollY + margin) {
+      y = window.scrollY + margin;
+    }
+
     this.style.left = `${x}px`;
     this.style.top = `${y}px`;
-    this.showPopover();
+
+    // Add click outside listener after a small delay to avoid immediate close
+    setTimeout(() => {
+      this.clickOutsideHandler = (e: MouseEvent) => {
+        // Check if click is outside the popover
+        if (!this.contains(e.target as Node)) {
+          this.hide();
+        }
+      };
+      document.addEventListener('click', this.clickOutsideHandler, true);
+    }, 100);
   }
 
   hide(): void {
+    // Remove click outside listener
+    if (this.clickOutsideHandler) {
+      document.removeEventListener('click', this.clickOutsideHandler, true);
+      this.clickOutsideHandler = null;
+    }
+
     this.hidePopover();
   }
 

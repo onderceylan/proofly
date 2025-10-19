@@ -260,6 +260,48 @@ export class ProofreadingTextarea extends HTMLElement {
 
   private getStyles(): string {
     return `
+      ::highlight(spelling) {
+        background-color: #fef2f2;
+        text-decoration: underline;
+        text-decoration-color: #dc2626;
+        text-decoration-thickness: 2px;
+      }
+
+      ::highlight(grammar) {
+        background-color: #eff6ff;
+        text-decoration: underline;
+        text-decoration-color: #2563eb;
+        text-decoration-thickness: 2px;
+      }
+
+      ::highlight(punctuation) {
+        background-color: #f5f3ff;
+        text-decoration: underline;
+        text-decoration-color: #7c3aed;
+        text-decoration-thickness: 2px;
+      }
+
+      ::highlight(capitalization) {
+        background-color: #fff7ed;
+        text-decoration: underline;
+        text-decoration-color: #ea580c;
+        text-decoration-thickness: 2px;
+      }
+
+      ::highlight(preposition) {
+        background-color: #ecfeff;
+        text-decoration: underline;
+        text-decoration-color: #0891b2;
+        text-decoration-thickness: 2px;
+      }
+
+      ::highlight(missing-words) {
+        background-color: #f0fdf4;
+        text-decoration: underline;
+        text-decoration-color: #16a34a;
+        text-decoration-thickness: 2px;
+      }
+
       :host {
         display: block;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
