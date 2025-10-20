@@ -23,6 +23,8 @@ export class ProofreadingManager {
   private elementMirrors = new Map<HTMLElement, TextareaMirror>();
   private elementCanvasHighlighters = new Map<HTMLElement, TextareaCanvasHighlighter>();
   private proofreaderService: ReturnType<typeof createProofreadingService> | null = null;
+  private elementPreviousText = new Map<HTMLElement, string>();
+  private isApplyingCorrection = false;
 
   async initialize(): Promise<void> {
     // Initialize proofreader service
@@ -109,6 +111,19 @@ export class ProofreadingManager {
     }
   }
 
+  private isOnlyTrailingSpaceAdded(element: HTMLElement, currentText: string): boolean {
+    const previousText = this.elementPreviousText.get(element) || '';
+
+    if (currentText.length <= previousText.length) {
+      return false;
+    }
+
+    const trimmedCurrent = currentText.trimEnd();
+    const trimmedPrevious = previousText.trimEnd();
+
+    return trimmedCurrent === trimmedPrevious && currentText !== trimmedCurrent;
+  }
+
   private observeEditableElements(): void {
     const debouncedProofread = debounce((element: HTMLElement) => {
       void this.proofreadElement(element);
@@ -117,8 +132,19 @@ export class ProofreadingManager {
     const handleInput = (e: Event) => {
       const target = e.target as HTMLElement;
       if (this.isEditableElement(target)) {
+        if (this.isApplyingCorrection) {
+          return;
+        }
+
+        const currentText = this.getElementText(target);
+
         this.clearHighlightsAfterCursor(target);
-        debouncedProofread(target);
+
+        if (!this.isOnlyTrailingSpaceAdded(target, currentText)) {
+          debouncedProofread(target);
+        }
+
+        this.elementPreviousText.set(target, currentText);
       }
     };
 
@@ -158,6 +184,8 @@ export class ProofreadingManager {
       this.clearElementHighlights(element);
       return;
     }
+
+    this.elementPreviousText.set(element, text);
 
     try {
       const result = await this.proofreaderService.proofread(text);
@@ -298,6 +326,9 @@ export class ProofreadingManager {
       this.setElementText(actualElement, newText);
     }
 
+    const newText = this.getElementText(actualElement);
+    this.elementPreviousText.set(actualElement, newText);
+
     const lengthDiff = correction.correction.length - (correction.endIndex - correction.startIndex);
     const corrections = this.elementCorrections.get(actualElement);
     if (corrections) {
@@ -355,6 +386,9 @@ export class ProofreadingManager {
         text.substring(correction.endIndex);
       this.setElementText(actualElement, newText);
     }
+
+    const newText = this.getElementText(actualElement);
+    this.elementPreviousText.set(actualElement, newText);
 
     const lengthDiff = correction.correction.length - (correction.endIndex - correction.startIndex);
 
@@ -417,54 +451,66 @@ export class ProofreadingManager {
   }
 
   private setElementText(element: HTMLElement, text: string): void {
-    const tagName = element.tagName.toLowerCase();
+    this.isApplyingCorrection = true;
 
-    if (tagName === 'textarea' || tagName === 'input') {
-      (element as HTMLInputElement | HTMLTextAreaElement).value = text;
-      element.dispatchEvent(new Event('input', { bubbles: true }));
-    } else {
-      element.textContent = text;
+    try {
+      const tagName = element.tagName.toLowerCase();
+
+      if (tagName === 'textarea' || tagName === 'input') {
+        (element as HTMLInputElement | HTMLTextAreaElement).value = text;
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+      } else {
+        element.textContent = text;
+      }
+    } finally {
+      this.isApplyingCorrection = false;
     }
   }
 
   private applyCorrectionWithUndo(element: HTMLTextAreaElement | HTMLInputElement, correction: ProofreadCorrection): void {
-    const originalStart = element.selectionStart;
-    const originalEnd = element.selectionEnd;
+    this.isApplyingCorrection = true;
 
-    element.focus();
-    element.setSelectionRange(correction.startIndex, correction.endIndex);
+    try {
+      const originalStart = element.selectionStart;
+      const originalEnd = element.selectionEnd;
 
-    const isSupported = document.execCommand('insertText', false, correction.correction);
+      element.focus();
+      element.setSelectionRange(correction.startIndex, correction.endIndex);
 
-    if (!isSupported) {
-      const text = element.value;
-      const before = text.substring(0, correction.startIndex);
-      const after = text.substring(correction.endIndex);
-      element.value = before + correction.correction + after;
+      const isSupported = document.execCommand('insertText', false, correction.correction);
 
-      const newPosition = correction.startIndex + correction.correction.length;
-      element.setSelectionRange(newPosition, newPosition);
-      element.dispatchEvent(new Event('input', { bubbles: true }));
-    }
+      if (!isSupported) {
+        const text = element.value;
+        const before = text.substring(0, correction.startIndex);
+        const after = text.substring(correction.endIndex);
+        element.value = before + correction.correction + after;
 
-    if (originalStart !== null && originalEnd !== null) {
-      const lengthDiff = correction.correction.length - (correction.endIndex - correction.startIndex);
-      let newStart = originalStart;
-      let newEnd = originalEnd;
-
-      if (originalStart > correction.endIndex) {
-        newStart = originalStart + lengthDiff;
-      } else if (originalStart > correction.startIndex) {
-        newStart = correction.startIndex + correction.correction.length;
+        const newPosition = correction.startIndex + correction.correction.length;
+        element.setSelectionRange(newPosition, newPosition);
+        element.dispatchEvent(new Event('input', { bubbles: true }));
       }
 
-      if (originalEnd > correction.endIndex) {
-        newEnd = originalEnd + lengthDiff;
-      } else if (originalEnd > correction.startIndex) {
-        newEnd = correction.startIndex + correction.correction.length;
-      }
+      if (originalStart !== null && originalEnd !== null) {
+        const lengthDiff = correction.correction.length - (correction.endIndex - correction.startIndex);
+        let newStart = originalStart;
+        let newEnd = originalEnd;
 
-      element.setSelectionRange(newStart, newEnd);
+        if (originalStart > correction.endIndex) {
+          newStart = originalStart + lengthDiff;
+        } else if (originalStart > correction.startIndex) {
+          newStart = correction.startIndex + correction.correction.length;
+        }
+
+        if (originalEnd > correction.endIndex) {
+          newEnd = originalEnd + lengthDiff;
+        } else if (originalEnd > correction.startIndex) {
+          newEnd = correction.startIndex + correction.correction.length;
+        }
+
+        element.setSelectionRange(newStart, newEnd);
+      }
+    } finally {
+      this.isApplyingCorrection = false;
     }
   }
 
@@ -474,12 +520,12 @@ export class ProofreadingManager {
     this.popover?.remove();
     this.observer?.disconnect();
 
-    // Clean up all mirrors (legacy)
     this.elementMirrors.forEach(mirror => mirror.destroy());
     this.elementMirrors.clear();
 
-    // Clean up all canvas highlighters
     this.elementCanvasHighlighters.forEach(highlighter => highlighter.destroy());
     this.elementCanvasHighlighters.clear();
+
+    this.elementPreviousText.clear();
   }
 }
