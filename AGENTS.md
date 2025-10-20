@@ -59,7 +59,7 @@ Proofly is a privacy-first Chrome extension for proofreading that uses Chrome's 
 - Enter text with intentional errors, issues, or content that exercises the feature
 - Simulate real user interactions
 
-#### 4. Verify Changes (3-Step Verification)
+#### 4. Verify Changes (4-Step Verification)
 
 **A. Element Inspection via Page Snapshot**
 ```typescript
@@ -69,15 +69,31 @@ mcp__chrome-devtools__take_snapshot({ verbose: false })
 - Check: Element attributes, classes, data attributes, Shadow DOM content
 - Verify: Components are rendered, custom elements exist
 
-**B. Visual Verification via Screenshot**
+**B. Visual Verification via Screenshot (Before Click)**
 ```typescript
 mcp__chrome-devtools__take_screenshot({ fullPage: true })
 ```
-- Purpose: Visual confirmation of UI elements, highlights, popovers
+- Purpose: Visual confirmation of UI elements, highlights, underlines
 - Check: Visual appearance, positioning, styling, user-visible state
-- Verify: Colors, overlays, tooltips, animations
+- Verify: Colors, wavy underlines, highlight positioning
 
-**C. Debugging via Extension Logs**
+**C. Issue Card Interaction Test**
+```typescript
+// 1. Take snapshot to find highlighted text
+mcp__chrome-devtools__take_snapshot({ verbose: false })
+
+// 2. Click on a highlighted issue in the textarea
+mcp__chrome-devtools__click({ uid: "textarea_uid" })
+// Click at the position of a highlighted word
+
+// 3. Take screenshot to verify issue card appears
+mcp__chrome-devtools__take_screenshot({ fullPage: false })
+```
+- Purpose: Verify user interaction with highlighted issues
+- Check: Issue card/popover appears, displays correction details
+- Verify: Click detection, popover positioning, correction type label, suggestion text, "Apply Fix" button
+
+**D. Debugging via Extension Logs**
 ```typescript
 mcp__chrome-devtools__extension_get_logs({
   extensionId: "oiaicmknhbpnhngdeppegnhobnleeolm",
@@ -88,18 +104,19 @@ mcp__chrome-devtools__extension_get_logs({
 ```
 - Purpose: Debug execution flow, verify sequence of operations
 - Check: Log messages, timing, execution order, error states
-- Verify: Content script initialization, event handlers, API calls
+- Verify: Content script initialization, event handlers, API calls, click events
 
 #### 5. Analysis & Iteration
-- Compare expected vs actual behavior across all three verification methods
+- Compare expected vs actual behavior across all four verification methods
 - Check for console errors or warnings via `list_console_messages`
-- Verify complete flow: input → detection → highlighting → correction
+- Verify complete flow: input → detection → highlighting → click → issue card → correction
 - If issues found, return to step 1
 
 #### Quick Reference
 
 **Test Page**: http://textarea.online/
-**Extension ID**: Get from manifest.json or chrome://extensions
+**Extension ID**: oiaicmknhbpnhngdeppegnhobnleeolm
+**Manifest Config**: manifest.config.ts (not manifest.json)
 
 **Common Test Scenarios**:
 - Basic proofreading: Type text with spelling/grammar errors

@@ -1,10 +1,61 @@
-/**
- * TextareaCanvasHighlighter - Canvas-based highlighting for textarea/input elements
- *
- * Simple approach: Absolutely positioned canvas overlay
- */
-
 import { CORRECTION_TYPE_COLORS } from '../../shared/utils/correction-colors.ts';
+
+class CanvasHighlighterElement extends HTMLElement {
+  private shadow: ShadowRoot;
+  private canvas: HTMLCanvasElement;
+  private container: HTMLDivElement;
+  private measureDiv: HTMLDivElement;
+
+  constructor() {
+    super();
+    this.shadow = this.attachShadow({ mode: 'closed' });
+
+    this.container = document.createElement('div');
+    this.container.style.cssText = `
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 1;
+    `;
+
+    this.canvas = document.createElement('canvas');
+    this.canvas.style.cssText = `
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    `;
+
+    this.measureDiv = document.createElement('div');
+    this.measureDiv.style.cssText = `
+      position: absolute;
+      visibility: hidden;
+      white-space: pre;
+      pointer-events: none;
+    `;
+
+    this.container.appendChild(this.canvas);
+    this.container.appendChild(this.measureDiv);
+    this.shadow.appendChild(this.container);
+  }
+
+  getCanvas(): HTMLCanvasElement {
+    return this.canvas;
+  }
+
+  getMeasureDiv(): HTMLDivElement {
+    return this.measureDiv;
+  }
+}
+
+if (!customElements.get('prfly-canvas-highlighter')) {
+  customElements.define('prfly-canvas-highlighter', CanvasHighlighterElement);
+}
 
 export class TextareaCanvasHighlighter {
   private textarea: HTMLTextAreaElement | HTMLInputElement;
@@ -15,33 +66,30 @@ export class TextareaCanvasHighlighter {
   private measureDiv: HTMLDivElement | null = null;
   private resizeObserver: ResizeObserver | null = null;
   private clickedCorrection: ProofreadCorrection | null = null;
+  private highlighterElement: CanvasHighlighterElement;
 
   constructor(textarea: HTMLTextAreaElement | HTMLInputElement) {
     this.textarea = textarea;
 
-    // Create canvas
-    this.canvas = document.createElement('canvas');
-    this.canvas.className = 'proofly-canvas';
-    this.canvas.style.cssText = `
+    this.highlighterElement = document.createElement('prfly-canvas-highlighter') as CanvasHighlighterElement;
+    this.highlighterElement.style.cssText = `
       position: absolute;
       pointer-events: none;
-      z-index: 1;
+      z-index: 999999;
     `;
 
-    // Get canvas context
+    this.canvas = this.highlighterElement.getCanvas();
+
     const context = this.canvas.getContext('2d');
     if (!context) {
       throw new Error('Failed to get canvas 2d context');
     }
     this.ctx = context;
 
-    // Insert canvas after textarea
-    this.textarea.parentNode?.insertBefore(this.canvas, this.textarea.nextSibling);
+    this.textarea.parentNode?.insertBefore(this.highlighterElement, this.textarea.nextSibling);
 
-    // Sync dimensions
     this.syncDimensions();
 
-    // Setup event listeners
     this.setupEventListeners();
   }
 
@@ -106,70 +154,114 @@ export class TextareaCanvasHighlighter {
   }
 
   private syncDimensions(): void {
+    if (this.corrections.length === 0) {
+      this.highlighterElement.style.width = '0px';
+      this.highlighterElement.style.height = '0px';
+      this.canvas.width = 0;
+      this.canvas.height = 0;
+      return;
+    }
+
+    const bounds = this.calculateHighlightBounds();
+    if (!bounds) {
+      this.highlighterElement.style.width = '0px';
+      this.highlighterElement.style.height = '0px';
+      this.canvas.width = 0;
+      this.canvas.height = 0;
+      return;
+    }
+
     const rect = this.textarea.getBoundingClientRect();
+    const scrollTop = this.textarea.scrollTop;
+    const scrollLeft = this.textarea.scrollLeft;
+    const style = window.getComputedStyle(this.textarea);
+    const paddingLeft = parseFloat(style.paddingLeft) || 0;
+    const paddingTop = parseFloat(style.paddingTop) || 0;
+    const borderLeft = parseFloat(style.borderLeftWidth) || 0;
+    const borderTop = parseFloat(style.borderTopWidth) || 0;
 
-    // Position canvas to overlay textarea
-    this.canvas.style.top = (rect.top + window.scrollY) + 'px';
-    this.canvas.style.left = (rect.left + window.scrollX) + 'px';
-    this.canvas.style.width = rect.width + 'px';
-    this.canvas.style.height = rect.height + 'px';
+    const canvasLeft = rect.left + window.scrollX + paddingLeft + borderLeft + bounds.minX - scrollLeft;
+    const canvasTop = rect.top + window.scrollY + paddingTop + borderTop + bounds.minY - scrollTop;
+    const canvasWidth = bounds.maxX - bounds.minX;
+    const canvasHeight = bounds.maxY - bounds.minY;
 
-    // Set canvas internal dimensions
-    this.canvas.width = rect.width;
-    this.canvas.height = rect.height;
+    this.highlighterElement.style.top = canvasTop + 'px';
+    this.highlighterElement.style.left = canvasLeft + 'px';
+    this.highlighterElement.style.width = canvasWidth + 'px';
+    this.highlighterElement.style.height = canvasHeight + 'px';
+
+    this.canvas.width = canvasWidth;
+    this.canvas.height = canvasHeight;
   }
 
-  /**
-   * Draw highlights for the given corrections
-   */
+  private calculateHighlightBounds(): { minX: number; minY: number; maxX: number; maxY: number } | null {
+    if (this.corrections.length === 0) return null;
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    for (const correction of this.corrections) {
+      const ranges = this.getCharacterRanges(correction.startIndex, correction.endIndex);
+
+      for (const range of ranges) {
+        minX = Math.min(minX, range.x);
+        minY = Math.min(minY, range.y);
+        maxX = Math.max(maxX, range.x + range.width);
+        maxY = Math.max(maxY, range.y + range.height);
+      }
+    }
+
+    if (minX === Infinity || minY === Infinity) return null;
+
+    const padding = 5;
+    return {
+      minX: Math.max(0, minX - padding),
+      minY: Math.max(0, minY - padding),
+      maxX: maxX + padding,
+      maxY: maxY + padding
+    };
+  }
+
   drawHighlights(corrections: ProofreadCorrection[]): void {
     this.corrections = corrections;
-    // Clear clicked correction if it's no longer in the corrections list
     if (this.clickedCorrection && !corrections.includes(this.clickedCorrection)) {
       this.clickedCorrection = null;
     }
+    this.syncDimensions();
     this.redraw();
   }
 
-  /**
-   * Clear all highlights
-   */
   clearHighlights(): void {
     this.corrections = [];
     this.clickedCorrection = null;
+    this.syncDimensions();
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
   }
 
   private redraw(): void {
-    // Clear canvas
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
     if (this.corrections.length === 0) {
       return;
     }
 
-    // Get textarea metrics
-    const scrollTop = this.textarea.scrollTop;
-    const scrollLeft = this.textarea.scrollLeft;
-    const style = window.getComputedStyle(this.textarea);
-    const paddingLeft = parseFloat(style.paddingLeft) || 0;
-    const paddingTop = parseFloat(style.paddingTop) || 0;
+    const bounds = this.calculateHighlightBounds();
+    if (!bounds) return;
 
-    // Draw each correction
     for (const correction of this.corrections) {
       const ranges = this.getCharacterRanges(correction.startIndex, correction.endIndex);
       const isClicked = this.clickedCorrection === correction;
 
       for (const range of ranges) {
-        const x = range.x - scrollLeft + paddingLeft;
-        const y = range.y - scrollTop + paddingTop;
+        const x = range.x - bounds.minX;
+        const y = range.y - bounds.minY;
 
-        // Draw background highlight if this correction is clicked
         if (isClicked) {
           this.drawBackground(x, y, range.width, range.height, correction.type || 'spelling');
         }
 
-        // Draw underline
         this.drawUnderline(x, y, range.width, range.height, correction.type || 'spelling');
       }
     }
@@ -319,26 +411,15 @@ export class TextareaCanvasHighlighter {
 
   private getOrCreateMeasureDiv(): HTMLDivElement {
     if (!this.measureDiv) {
-      this.measureDiv = document.createElement('div');
+      this.measureDiv = this.highlighterElement.getMeasureDiv();
       const textareaStyle = window.getComputedStyle(this.textarea);
 
-      this.measureDiv.style.cssText = `
-        position: absolute;
-        visibility: hidden;
-        white-space: pre;
-        font-family: ${textareaStyle.fontFamily};
-        font-size: ${textareaStyle.fontSize};
-        font-weight: ${textareaStyle.fontWeight};
-        letter-spacing: ${textareaStyle.letterSpacing};
-        word-spacing: ${textareaStyle.wordSpacing};
-        line-height: ${textareaStyle.lineHeight};
-      `;
-
-      document.body.appendChild(this.measureDiv);
-      this.cleanup.push(() => {
-        this.measureDiv?.remove();
-        this.measureDiv = null;
-      });
+      this.measureDiv.style.fontFamily = textareaStyle.fontFamily;
+      this.measureDiv.style.fontSize = textareaStyle.fontSize;
+      this.measureDiv.style.fontWeight = textareaStyle.fontWeight;
+      this.measureDiv.style.letterSpacing = textareaStyle.letterSpacing;
+      this.measureDiv.style.wordSpacing = textareaStyle.wordSpacing;
+      this.measureDiv.style.lineHeight = textareaStyle.lineHeight;
     }
 
     return this.measureDiv;
@@ -350,21 +431,21 @@ export class TextareaCanvasHighlighter {
     const style = window.getComputedStyle(this.textarea);
     const paddingLeft = parseFloat(style.paddingLeft) || 0;
     const paddingTop = parseFloat(style.paddingTop) || 0;
+    const borderLeft = parseFloat(style.borderLeftWidth) || 0;
+    const borderTop = parseFloat(style.borderTopWidth) || 0;
 
-    // Adjust for scroll and padding
-    const adjustedX = x + scrollLeft - paddingLeft;
-    const adjustedY = y + scrollTop - paddingTop;
+    const contentX = x - paddingLeft - borderLeft + scrollLeft;
+    const contentY = y - paddingTop - borderTop + scrollTop;
 
-    // Check each correction
     for (const correction of this.corrections) {
       const ranges = this.getCharacterRanges(correction.startIndex, correction.endIndex);
 
       for (const range of ranges) {
         if (
-          adjustedX >= range.x &&
-          adjustedX <= range.x + range.width &&
-          adjustedY >= range.y &&
-          adjustedY <= range.y + range.height
+          contentX >= range.x &&
+          contentX <= range.x + range.width &&
+          contentY >= range.y &&
+          contentY <= range.y + range.height
         ) {
           return correction;
         }
@@ -400,9 +481,6 @@ export class TextareaCanvasHighlighter {
     return this.textarea;
   }
 
-  /**
-   * Cleanup and remove the highlighter
-   */
   destroy(): void {
     this.cleanup.forEach(fn => fn());
     this.cleanup = [];
@@ -412,7 +490,8 @@ export class TextareaCanvasHighlighter {
       this.resizeObserver = null;
     }
 
-    this.canvas.remove();
+    this.highlighterElement.remove();
+    this.measureDiv = null;
     this.onCorrectionClick = null;
   }
 }
