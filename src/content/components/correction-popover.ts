@@ -72,6 +72,7 @@ export class CorrectionPopover extends HTMLElement {
     }
 
     this.hidePopover();
+    this.dispatchEvent(new CustomEvent('proofly:popover-hide'));
   }
 
   private updateContent(): void {

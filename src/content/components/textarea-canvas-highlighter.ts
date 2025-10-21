@@ -246,6 +246,13 @@ export class TextareaCanvasHighlighter {
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
   }
 
+  clearSelection(): void {
+    if (this.clickedCorrection) {
+      this.clickedCorrection = null;
+      this.redraw();
+    }
+  }
+
   private redraw(): void {
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 

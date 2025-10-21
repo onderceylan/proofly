@@ -26,6 +26,8 @@ export class ProofreadingManager {
   private elementPreviousText = new Map<HTMLElement, string>();
   private isApplyingCorrection = false;
   private debouncedProofread: ((element: HTMLElement) => void) | null = null;
+  private activeCanvasHighlighter: TextareaCanvasHighlighter | null = null;
+  private popoverHideCleanup: (() => void) | null = null;
 
   async initialize(): Promise<void> {
     // Initialize proofreader service
@@ -63,11 +65,29 @@ export class ProofreadingManager {
   private createPopover(): void {
     if (document.querySelector('proofly-correction-popover')) {
       this.popover = document.querySelector('proofly-correction-popover') as CorrectionPopover;
-      return;
+    } else {
+      this.popover = document.createElement('proofly-correction-popover') as CorrectionPopover;
+      document.body.appendChild(this.popover);
     }
 
-    this.popover = document.createElement('proofly-correction-popover') as CorrectionPopover;
-    document.body.appendChild(this.popover);
+    if (this.popoverHideCleanup) {
+      this.popoverHideCleanup();
+      this.popoverHideCleanup = null;
+    }
+
+    if (this.popover) {
+      const handlePopoverHide = () => {
+        this.highlighter.clearSelection();
+        if (this.activeCanvasHighlighter) {
+          this.activeCanvasHighlighter.clearSelection();
+          this.activeCanvasHighlighter = null;
+        }
+      };
+      this.popover.addEventListener('proofly:popover-hide', handlePopoverHide);
+      this.popoverHideCleanup = () => {
+        this.popover?.removeEventListener('proofly:popover-hide', handlePopoverHide);
+      };
+    }
   }
 
   private setupContextMenuHandler(): void {
@@ -269,10 +289,16 @@ export class ProofreadingManager {
       canvasHighlighter = new TextareaCanvasHighlighter(element);
       this.elementCanvasHighlighters.set(element, canvasHighlighter);
 
+      const highlighterInstance = canvasHighlighter;
       // Setup click handler for popover
       canvasHighlighter.setOnCorrectionClick((correction, x, y) => {
+        this.activeCanvasHighlighter = highlighterInstance;
         this.showPopoverForCorrection(element, correction, x, y);
       });
+    }
+
+    if (!canvasHighlighter) {
+      return;
     }
 
     // Draw highlights on canvas
@@ -304,6 +330,9 @@ export class ProofreadingManager {
       const canvasHighlighter = this.elementCanvasHighlighters.get(element);
       if (canvasHighlighter) {
         canvasHighlighter.clearHighlights();
+        if (this.activeCanvasHighlighter === canvasHighlighter) {
+          this.activeCanvasHighlighter = null;
+        }
       }
     } else {
       // Clear DOM highlights for contenteditable

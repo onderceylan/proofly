@@ -2,6 +2,8 @@
  * Chrome Storage Utilities
  *
  * Type-safe wrapper around Chrome storage API for managing extension state.
+ * User settings are stored in sync storage to sync across devices.
+ * Model-related data is stored in local storage as it's device-specific.
  */
 
 import { STORAGE_KEYS, STORAGE_DEFAULTS } from '../constants.ts';
@@ -16,12 +18,30 @@ export interface StorageData {
 }
 
 /**
+ * Keys that should be stored in sync storage (user preferences)
+ */
+const SYNC_KEYS = [
+  STORAGE_KEYS.AUTO_CORRECT,
+  STORAGE_KEYS.UNDERLINE_STYLE,
+] as const;
+
+/**
+ * Determine which storage area to use for a given key
+ */
+function getStorageArea(key: string): chrome.storage.StorageArea {
+  return SYNC_KEYS.includes(key as typeof SYNC_KEYS[number])
+    ? chrome.storage.sync
+    : chrome.storage.local;
+}
+
+/**
  * Get a value from Chrome storage
  */
 export async function getStorageValue<K extends keyof StorageData>(
   key: K
 ): Promise<StorageData[K]> {
-  const result = await chrome.storage.local.get(key);
+  const storage = getStorageArea(key);
+  const result = await storage.get(key);
   return result[key] ?? STORAGE_DEFAULTS[key];
 }
 
@@ -31,10 +51,25 @@ export async function getStorageValue<K extends keyof StorageData>(
 export async function getStorageValues<K extends keyof StorageData>(
   keys: K[]
 ): Promise<Pick<StorageData, K>> {
-  const result = await chrome.storage.local.get(keys);
   const data = {} as Pick<StorageData, K>;
 
+  // Group keys by storage area
+  const syncKeys = keys.filter(k => SYNC_KEYS.includes(k as typeof SYNC_KEYS[number]));
+  const localKeys = keys.filter(k => !SYNC_KEYS.includes(k as typeof SYNC_KEYS[number]));
+
+  // Fetch from both storage areas in parallel
+  const [syncResult, localResult] = await Promise.all([
+    syncKeys.length > 0
+      ? chrome.storage.sync.get(syncKeys).then(result => result as Partial<StorageData>)
+      : Promise.resolve<Partial<StorageData>>({}),
+    localKeys.length > 0
+      ? chrome.storage.local.get(localKeys).then(result => result as Partial<StorageData>)
+      : Promise.resolve<Partial<StorageData>>({}),
+  ]);
+
+  // Merge results with defaults
   for (const key of keys) {
+    const result = SYNC_KEYS.includes(key as typeof SYNC_KEYS[number]) ? syncResult : localResult;
     data[key] = result[key] ?? STORAGE_DEFAULTS[key];
   }
 
@@ -48,7 +83,8 @@ export async function setStorageValue<K extends keyof StorageData>(
   key: K,
   value: StorageData[K]
 ): Promise<void> {
-  await chrome.storage.local.set({ [key]: value });
+  const storage = getStorageArea(key);
+  await storage.set({ [key]: value });
 }
 
 /**
@@ -57,7 +93,23 @@ export async function setStorageValue<K extends keyof StorageData>(
 export async function setStorageValues(
   data: Partial<StorageData>
 ): Promise<void> {
-  await chrome.storage.local.set(data);
+  const syncData: Partial<StorageData> = {};
+  const localData: Partial<StorageData> = {};
+
+  // Split data by storage area
+  for (const [key, value] of Object.entries(data)) {
+    if (SYNC_KEYS.includes(key as typeof SYNC_KEYS[number])) {
+      syncData[key as keyof StorageData] = value as never;
+    } else {
+      localData[key as keyof StorageData] = value as never;
+    }
+  }
+
+  // Write to both storage areas in parallel
+  await Promise.all([
+    Object.keys(syncData).length > 0 ? chrome.storage.sync.set(syncData) : Promise.resolve(),
+    Object.keys(localData).length > 0 ? chrome.storage.local.set(localData) : Promise.resolve(),
+  ]);
 }
 
 /**
@@ -79,11 +131,13 @@ export function onStorageChange<K extends keyof StorageData>(
   key: K,
   callback: (newValue: StorageData[K], oldValue: StorageData[K]) => void
 ): () => void {
+  const expectedArea = SYNC_KEYS.includes(key as typeof SYNC_KEYS[number]) ? 'sync' : 'local';
+
   const listener = (
     changes: { [key: string]: chrome.storage.StorageChange },
     areaName: string
   ) => {
-    if (areaName === 'local' && changes[key]) {
+    if (areaName === expectedArea && changes[key]) {
       callback(changes[key].newValue, changes[key].oldValue);
     }
   };
@@ -99,17 +153,35 @@ export function onStorageChange<K extends keyof StorageData>(
  * Initialize storage with default values if not set
  */
 export async function initializeStorage(): Promise<void> {
-  const currentValues = await chrome.storage.local.get(Object.keys(STORAGE_DEFAULTS));
+  const allKeys = Object.keys(STORAGE_DEFAULTS);
+  const syncKeys = allKeys.filter(k => SYNC_KEYS.includes(k as typeof SYNC_KEYS[number]));
+  const localKeys = allKeys.filter(k => !SYNC_KEYS.includes(k as typeof SYNC_KEYS[number]));
 
-  const updates: Partial<StorageData> = {};
+  // Fetch current values from both storage areas
+  const [syncValues, localValues] = await Promise.all([
+    syncKeys.length > 0 ? chrome.storage.sync.get(syncKeys) : Promise.resolve({}),
+    localKeys.length > 0 ? chrome.storage.local.get(localKeys) : Promise.resolve({}),
+  ]);
 
+  const syncUpdates: Partial<StorageData> = {};
+  const localUpdates: Partial<StorageData> = {};
+
+  // Check which defaults need to be set
   for (const [key, defaultValue] of Object.entries(STORAGE_DEFAULTS)) {
-    if (!(key in currentValues)) {
-      updates[key as keyof StorageData] = defaultValue as never;
+    if (SYNC_KEYS.includes(key as typeof SYNC_KEYS[number])) {
+      if (!(key in syncValues)) {
+        syncUpdates[key as keyof StorageData] = defaultValue as never;
+      }
+    } else {
+      if (!(key in localValues)) {
+        localUpdates[key as keyof StorageData] = defaultValue as never;
+      }
     }
   }
 
-  if (Object.keys(updates).length > 0) {
-    await chrome.storage.local.set(updates);
-  }
+  // Write defaults to both storage areas in parallel
+  await Promise.all([
+    Object.keys(syncUpdates).length > 0 ? chrome.storage.sync.set(syncUpdates) : Promise.resolve(),
+    Object.keys(localUpdates).length > 0 ? chrome.storage.local.set(localUpdates) : Promise.resolve(),
+  ]);
 }
