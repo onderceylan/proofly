@@ -188,9 +188,9 @@ export class ProofreadingManager {
           const hasCorrections = this.elementCorrections.has(target);
           const hasPreviousText = this.elementPreviousText.has(target);
 
-          // Trigger proofreading if element has text but hasn't been proofread yet
+          // Trigger immediate proofreading for pre-filled text (no debounce)
           if (!hasCorrections && !hasPreviousText) {
-            this.debouncedProofread?.(target);
+            void this.proofreadElement(target);
             this.elementPreviousText.set(target, text);
           }
         }
@@ -208,7 +208,8 @@ export class ProofreadingManager {
               if (this.isEditableElement(element)) {
                 const text = this.getElementText(element);
                 if (text && text.length > 10) {
-                  this.debouncedProofread?.(element);
+                  // Proofread immediately for dynamically added elements with existing text
+                  void this.proofreadElement(element);
                 }
               }
             }

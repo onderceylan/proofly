@@ -207,6 +207,18 @@ mcp__chrome-devtools__take_screenshot()
 
 ### Code Style
 
+#### Import Paths
+- **NEVER use `~` or other aliases for imports**: Always use relative paths
+- **Example**:
+  ```typescript
+  // ❌ Bad: Using alias
+  import { logger } from "~/services/logger.ts";
+
+  // ✅ Good: Relative path
+  import { logger } from "../services/logger.ts";
+  import { logger } from "../../services/logger.ts";
+  ```
+
 #### Comments
 - **Don't use comments with code**: Avoid adding comments and descriptions to files, variables, and functions
 - **Self-explanatory naming**: Use clear, descriptive names for variables, functions, and types
