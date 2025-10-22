@@ -1,6 +1,5 @@
 import { debounce } from '../shared/utils/debounce.ts';
 import { ContentHighlighter } from './components/content-highlighter.ts';
-import { TextareaMirror } from './components/textarea-mirror.ts';
 import { CanvasHighlighter } from './components/canvas-highlighter.ts';
 import {
   createProofreader,
@@ -30,7 +29,6 @@ export class ProofreadingManager {
   private activeElement: HTMLElement | null = null;
   private observer: MutationObserver | null = null;
   private elementCorrections = new Map<HTMLElement, ProofreadCorrection[]>();
-  private elementMirrors = new Map<HTMLElement, TextareaMirror>();
   private elementCanvasHighlighters = new Map<HTMLElement, CanvasHighlighter>();
   private proofreaderService: ReturnType<typeof createProofreadingService> | null = null;
   private elementPreviousText = new Map<HTMLElement, string>();
@@ -46,24 +44,24 @@ export class ProofreadingManager {
   async initialize(): Promise<void> {
     // Initialize proofreader service
     try {
-      logger.info('Proofly: Starting proofreader initialization');
+      logger.info('Starting proofreader initialization');
       const proofreader = await createProofreader();
-      logger.info('Proofly: Proofreader created');
+      logger.info('Proofreader created');
       const adapter = createProofreaderAdapter(proofreader);
       this.proofreaderService = createProofreadingService(adapter);
-      logger.info('Proofly: Proofreader service initialized successfully');
+      logger.info('Proofreader service initialized successfully');
     } catch (error) {
-      logger.error({error}, 'Proofly: Failed to initialize proofreader');
+      logger.error({error}, 'Failed to initialize proofreader');
       return;
     }
 
-    logger.info('Proofly: Setting up event listeners');
+    logger.info('Setting up event listeners');
     this.createSidebar();
     this.createPopover();
     this.setupContextMenuHandler();
     this.observeEditableElements();
     await this.initializeCorrectionPreferences();
-    logger.info('Proofly: Event listeners set up - ready for input!');
+    logger.info('Event listeners set up - ready for input!');
   }
 
   private createSidebar(): void {
@@ -85,10 +83,7 @@ export class ProofreadingManager {
       document.body.appendChild(this.popover);
     }
 
-    if (this.popoverHideCleanup) {
-      this.popoverHideCleanup();
-      this.popoverHideCleanup = null;
-    }
+    this.cleanupHandler(this.popoverHideCleanup);
 
     if (this.popover) {
       const handlePopoverHide = () => {
@@ -103,6 +98,10 @@ export class ProofreadingManager {
         this.popover?.removeEventListener('proofly:popover-hide', handlePopoverHide);
       };
     }
+  }
+
+  private cleanupHandler(cleanup: (() => void) | null): void {
+    cleanup?.();
   }
 
   private setupContextMenuHandler(): void {
@@ -136,13 +135,7 @@ export class ProofreadingManager {
       this.sidebar?.setIssues([]);
     } else if (validCorrections.length < corrections.length) {
       this.elementCorrections.set(element, validCorrections);
-
-      if (this.isTextareaOrInput(element)) {
-        this.highlightWithCanvas(element as HTMLTextAreaElement | HTMLInputElement, validCorrections);
-      } else {
-        this.highlighter.highlight(element, validCorrections);
-      }
-
+      this.rehighlightElement(element, validCorrections);
       this.updateSidebar(element, validCorrections);
     }
   }
@@ -248,7 +241,7 @@ export class ProofreadingManager {
 
       const currentText = this.getElementText(element);
       if (currentText !== text) {
-        logger.info('Proofly: Text changed during proofreading, discarding stale results');
+        logger.info('Text changed during proofreading, discarding stale results');
         return;
       }
 
@@ -268,34 +261,27 @@ export class ProofreadingManager {
 
         this.elementCorrections.set(element, filteredCorrections);
 
-        // For textarea/input, use canvas overlay
-        if (this.isTextareaOrInput(element)) {
-          this.highlightWithCanvas(element as HTMLTextAreaElement | HTMLInputElement, filteredCorrections);
-        } else {
-          // For contenteditable, use direct highlighting
-          this.highlighter.highlight(element, filteredCorrections);
-        }
-
+        // Highlight the corrections
+        this.rehighlightElement(element, filteredCorrections);
         this.updateSidebar(element, filteredCorrections);
 
         // Setup callback for when corrections are applied via clicking highlights
-        const targetElement = this.getHighlightTarget(element);
-        this.highlighter.setOnCorrectionApplied(targetElement, (updatedCorrections) => {
+        this.highlighter.setOnCorrectionApplied(element, (updatedCorrections) => {
           this.elementCorrections.set(element, updatedCorrections);
           this.updateSidebar(element, updatedCorrections);
         });
 
         // Setup callback to actually apply the correction text
-        this.highlighter.setApplyCorrectionCallback(targetElement, (clickedElement, correction) => {
-          this.handleCorrectionFromPopover(element, clickedElement, correction);
+        this.highlighter.setApplyCorrectionCallback(element, (_clickedElement, correction) => {
+          this.handleCorrectionFromPopover(element, correction);
         });
 
-        logger.info(`Proofly: Found ${filteredCorrections.length} corrections`);
+        logger.info(`Found ${filteredCorrections.length} corrections`);
       } else {
         this.clearElementHighlights(element);
       }
     } catch (error) {
-      logger.error({ error }, 'Proofly: Proofreading failed');
+      logger.error({ error }, 'Proofreading failed');
     }
   }
 
@@ -308,15 +294,9 @@ export class ProofreadingManager {
     this.enabledCorrectionTypes = new Set(enabledCorrectionTypes);
 
     const colorConfig: CorrectionColorConfig = structuredClone(correctionColors);
-    this.correctionColors = buildCorrectionColorThemes(colorConfig);
-    setActiveCorrectionColors(colorConfig);
-    this.highlighter.setCorrectionColors(this.correctionColors);
-    this.elementCanvasHighlighters.forEach((highlighter) => highlighter.setCorrectionColors(this.correctionColors));
+    this.updateCorrectionColors(colorConfig);
 
-    if (this.correctionTypeCleanup) {
-      this.correctionTypeCleanup();
-    }
-
+    this.cleanupHandler(this.correctionTypeCleanup);
     this.correctionTypeCleanup = onStorageChange(
       STORAGE_KEYS.ENABLED_CORRECTION_TYPES,
       (newValue) => {
@@ -325,21 +305,22 @@ export class ProofreadingManager {
       }
     );
 
-    if (this.correctionColorsCleanup) {
-      this.correctionColorsCleanup();
-    }
-
+    this.cleanupHandler(this.correctionColorsCleanup);
     this.correctionColorsCleanup = onStorageChange(
       STORAGE_KEYS.CORRECTION_COLORS,
       (newValue) => {
         const updatedConfig: CorrectionColorConfig = structuredClone(newValue);
-        this.correctionColors = buildCorrectionColorThemes(updatedConfig);
-        setActiveCorrectionColors(updatedConfig);
-        this.highlighter.setCorrectionColors(this.correctionColors);
-        this.elementCanvasHighlighters.forEach((highlighter) => highlighter.setCorrectionColors(this.correctionColors));
+        this.updateCorrectionColors(updatedConfig);
         this.refreshCorrectionsForTrackedElements();
       }
     );
+  }
+
+  private updateCorrectionColors(colorConfig: CorrectionColorConfig): void {
+    this.correctionColors = buildCorrectionColorThemes(colorConfig);
+    setActiveCorrectionColors(colorConfig);
+    this.highlighter.setCorrectionColors(this.correctionColors);
+    this.elementCanvasHighlighters.forEach((highlighter) => highlighter.setCorrectionColors(this.correctionColors));
   }
 
   private refreshCorrectionsForTrackedElements(): void {
@@ -393,10 +374,6 @@ export class ProofreadingManager {
       canvasHighlighter.setCorrectionColors(this.correctionColors);
     }
 
-    if (!canvasHighlighter) {
-      return;
-    }
-
     // Draw highlights on canvas
     canvasHighlighter.drawHighlights(corrections);
   }
@@ -405,19 +382,78 @@ export class ProofreadingManager {
     if (!this.popover) return;
 
     this.popover.setCorrection(correction, (appliedCorrection) => {
-      this.handleCorrectionFromPopover(element, element, appliedCorrection);
+      this.handleCorrectionFromPopover(element, appliedCorrection);
     });
 
     this.popover.show(x, y + 20); // Show below the click point
   }
 
-  private getHighlightTarget(element: HTMLElement): HTMLElement {
-    // For textarea/input, return the mirror element
+  private rehighlightElement(element: HTMLElement, corrections: ProofreadCorrection[]): void {
     if (this.isTextareaOrInput(element)) {
-      const mirror = this.elementMirrors.get(element);
-      return mirror ? mirror.getElement() : element;
+      this.highlightWithCanvas(element as HTMLTextAreaElement | HTMLInputElement, corrections);
+    } else {
+      this.highlighter.highlight(element, corrections);
     }
-    return element;
+  }
+
+  private updateCorrectionsAfterApply(
+    element: HTMLElement,
+    appliedCorrection: ProofreadCorrection
+  ): ProofreadCorrection[] | null {
+    const corrections = this.elementCorrections.get(element);
+    if (!corrections) return null;
+
+    const lengthDiff = appliedCorrection.correction.length - (appliedCorrection.endIndex - appliedCorrection.startIndex);
+
+    return corrections
+      .filter(c => c !== appliedCorrection)
+      .map(c => {
+        if (c.startIndex > appliedCorrection.startIndex) {
+          return {
+            ...c,
+            startIndex: c.startIndex + lengthDiff,
+            endIndex: c.endIndex + lengthDiff
+          };
+        }
+        return c;
+      });
+  }
+
+  private applyCorrectionToElement(element: HTMLElement, correction: ProofreadCorrection): void {
+    const text = this.getElementText(element);
+    if (!text) return;
+
+    // Apply the correction
+    if (this.isTextareaOrInput(element)) {
+      this.applyCorrectionWithUndo(element as HTMLTextAreaElement | HTMLInputElement, correction);
+    } else {
+      const newText =
+        text.substring(0, correction.startIndex) +
+        correction.correction +
+        text.substring(correction.endIndex);
+      this.setElementText(element, newText);
+    }
+
+    // Update tracked text
+    const newText = this.getElementText(element);
+    this.elementPreviousText.set(element, newText);
+
+    // Update remaining corrections
+    const updatedCorrections = this.updateCorrectionsAfterApply(element, correction);
+    if (updatedCorrections !== null) {
+      this.elementCorrections.set(element, updatedCorrections);
+
+      if (updatedCorrections.length > 0) {
+        this.rehighlightElement(element, updatedCorrections);
+        this.updateSidebar(element, updatedCorrections);
+      } else {
+        this.clearElementHighlights(element);
+        this.sidebar?.setIssues([]);
+      }
+    }
+
+    // Trigger re-proofreading
+    this.debouncedProofread?.(element);
   }
 
   private clearElementHighlights(element: HTMLElement): void {
@@ -461,132 +497,13 @@ export class ProofreadingManager {
     this.sidebar.setIssues(issues);
   }
 
-  private handleCorrectionFromPopover(originalElement: HTMLElement, clickedElement: HTMLElement, correction: ProofreadCorrection): void {
-    let actualElement = originalElement;
-
-    if (this.isTextareaOrInput(originalElement)) {
-      actualElement = originalElement;
-    } else if (clickedElement.hasAttribute('data-proofly-mirror')) {
-      for (const [textarea, mirror] of this.elementMirrors.entries()) {
-        if (mirror.getElement() === clickedElement) {
-          actualElement = textarea;
-          break;
-        }
-      }
-    }
-
-    const text = this.getElementText(actualElement);
-    if (!text) return;
-
-    if (this.isTextareaOrInput(actualElement)) {
-      this.applyCorrectionWithUndo(actualElement as HTMLTextAreaElement | HTMLInputElement, correction);
-    } else {
-      const newText =
-        text.substring(0, correction.startIndex) +
-        correction.correction +
-        text.substring(correction.endIndex);
-      this.setElementText(actualElement, newText);
-    }
-
-    const newText = this.getElementText(actualElement);
-    this.elementPreviousText.set(actualElement, newText);
-
-    const lengthDiff = correction.correction.length - (correction.endIndex - correction.startIndex);
-    const corrections = this.elementCorrections.get(actualElement);
-    if (corrections) {
-      const updatedCorrections = corrections
-        .filter(c => c !== correction)
-        .map(c => {
-          if (c.startIndex > correction.startIndex) {
-            return {
-              ...c,
-              startIndex: c.startIndex + lengthDiff,
-              endIndex: c.endIndex + lengthDiff
-            };
-          }
-          return c;
-        });
-
-      this.elementCorrections.set(actualElement, updatedCorrections);
-
-      if (updatedCorrections.length > 0) {
-        if (this.isTextareaOrInput(actualElement)) {
-          this.highlightWithCanvas(actualElement as HTMLTextAreaElement | HTMLInputElement, updatedCorrections);
-        } else {
-          this.highlighter.highlight(actualElement, updatedCorrections);
-        }
-        this.updateSidebar(actualElement, updatedCorrections);
-      } else {
-        this.clearElementHighlights(actualElement);
-        this.sidebar?.setIssues([]);
-      }
-    }
-
-    this.debouncedProofread?.(actualElement);
+  private handleCorrectionFromPopover(element: HTMLElement, correction: ProofreadCorrection): void {
+    this.applyCorrectionToElement(element, correction);
   }
 
   private applyCorrection(issue: IssueItem): void {
     const { element, correction } = issue;
-
-    let actualElement = element;
-    if (element.hasAttribute('data-proofly-mirror')) {
-      for (const [textarea, mirror] of this.elementMirrors.entries()) {
-        if (mirror.getElement() === element) {
-          actualElement = textarea;
-          break;
-        }
-      }
-    }
-
-    const text = this.getElementText(actualElement);
-    if (!text) return;
-
-    if (this.isTextareaOrInput(actualElement)) {
-      this.applyCorrectionWithUndo(actualElement as HTMLTextAreaElement | HTMLInputElement, correction);
-    } else {
-      const newText =
-        text.substring(0, correction.startIndex) +
-        correction.correction +
-        text.substring(correction.endIndex);
-      this.setElementText(actualElement, newText);
-    }
-
-    const newText = this.getElementText(actualElement);
-    this.elementPreviousText.set(actualElement, newText);
-
-    const lengthDiff = correction.correction.length - (correction.endIndex - correction.startIndex);
-
-    const corrections = this.elementCorrections.get(actualElement);
-    if (corrections) {
-      const updatedCorrections = corrections
-        .filter(c => c !== correction)
-        .map(c => {
-          if (c.startIndex > correction.startIndex) {
-            return {
-              ...c,
-              startIndex: c.startIndex + lengthDiff,
-              endIndex: c.endIndex + lengthDiff
-            };
-          }
-          return c;
-        });
-
-      this.elementCorrections.set(actualElement, updatedCorrections);
-
-      if (updatedCorrections.length > 0) {
-        if (this.isTextareaOrInput(actualElement)) {
-          this.highlightWithCanvas(actualElement as HTMLTextAreaElement | HTMLInputElement, updatedCorrections);
-        } else {
-          this.highlighter.highlight(actualElement, updatedCorrections);
-        }
-        this.updateSidebar(actualElement, updatedCorrections);
-      } else {
-        this.clearElementHighlights(actualElement);
-        this.sidebar?.setIssues([]);
-      }
-    }
-
-    this.debouncedProofread?.(actualElement);
+    this.applyCorrectionToElement(element, correction);
   }
 
   private isEditableElement(element: HTMLElement): boolean {
@@ -686,27 +603,18 @@ export class ProofreadingManager {
     this.popover?.remove();
     this.observer?.disconnect();
 
-    this.elementMirrors.forEach(mirror => mirror.destroy());
-    this.elementMirrors.clear();
-
     this.elementCanvasHighlighters.forEach(highlighter => highlighter.destroy());
     this.elementCanvasHighlighters.clear();
 
     this.elementPreviousText.clear();
 
-    if (this.popoverHideCleanup) {
-      this.popoverHideCleanup();
-      this.popoverHideCleanup = null;
-    }
+    this.cleanupHandler(this.popoverHideCleanup);
+    this.popoverHideCleanup = null;
 
-    if (this.correctionTypeCleanup) {
-      this.correctionTypeCleanup();
-      this.correctionTypeCleanup = null;
-    }
+    this.cleanupHandler(this.correctionTypeCleanup);
+    this.correctionTypeCleanup = null;
 
-    if (this.correctionColorsCleanup) {
-      this.correctionColorsCleanup();
-      this.correctionColorsCleanup = null;
-    }
+    this.cleanupHandler(this.correctionColorsCleanup);
+    this.correctionColorsCleanup = null;
   }
 }

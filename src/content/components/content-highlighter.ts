@@ -7,7 +7,7 @@ import { getStorageValue, onStorageChange } from '../../shared/utils/storage.ts'
 import type { UnderlineStyle } from '../../shared/types.ts';
 import './correction-popover.ts';
 import type { CorrectionPopover } from './correction-popover.ts';
-import {logger} from "~/services/logger.ts";
+import { logger } from '../../services/logger.ts';
 
 const ERROR_TYPES = [
   'spelling',
