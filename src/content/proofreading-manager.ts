@@ -1,4 +1,5 @@
 import { debounce } from '../shared/utils/debounce.ts';
+import { AsyncQueue } from '../shared/utils/queue.ts';
 import { ContentHighlighter } from './components/content-highlighter.ts';
 import { CanvasHighlighter } from './components/canvas-highlighter.ts';
 import {
@@ -40,6 +41,7 @@ export class ProofreadingManager {
   private correctionTypeCleanup: (() => void) | null = null;
   private correctionColors: CorrectionColorThemeMap = getActiveCorrectionColors();
   private correctionColorsCleanup: (() => void) | null = null;
+  private proofreadQueue = new AsyncQueue();
 
   async initialize(): Promise<void> {
     // Initialize proofreader service
@@ -237,53 +239,57 @@ export class ProofreadingManager {
 
     this.elementPreviousText.set(element, text);
 
-    try {
-      const result = await this.proofreaderService.proofread(text);
+    // Queue the proofreading operation to avoid race conditions
+    // when multiple elements trigger proofreading simultaneously
+    await this.proofreadQueue.enqueue(async () => {
+      try {
+        const result = await this.proofreaderService!.proofread(text);
 
-      const currentText = this.getElementText(element);
-      if (currentText !== text) {
-        logger.info('Text changed during proofreading, discarding stale results');
-        return;
-      }
-
-      if (result.corrections && result.corrections.length > 0) {
-        const trimmedLength = text.trimEnd().length;
-        const trimmedCorrections = result.corrections.filter(correction =>
-          correction.startIndex < trimmedLength
-        );
-
-        const filteredCorrections = trimmedCorrections.filter((correction) => this.isCorrectionEnabled(correction));
-
-        if (filteredCorrections.length === 0) {
-          this.clearElementHighlights(element);
-          this.sidebar?.setIssues([]);
+        const currentText = this.getElementText(element);
+        if (currentText !== text) {
+          logger.info('Text changed during proofreading, discarding stale results');
           return;
         }
 
-        this.elementCorrections.set(element, filteredCorrections);
+        if (result.corrections && result.corrections.length > 0) {
+          const trimmedLength = text.trimEnd().length;
+          const trimmedCorrections = result.corrections.filter(correction =>
+            correction.startIndex < trimmedLength
+          );
 
-        // Highlight the corrections
-        this.rehighlightElement(element, filteredCorrections);
-        this.updateSidebar(element, filteredCorrections);
+          const filteredCorrections = trimmedCorrections.filter((correction) => this.isCorrectionEnabled(correction));
 
-        // Setup callback for when corrections are applied via clicking highlights
-        this.highlighter.setOnCorrectionApplied(element, (updatedCorrections) => {
-          this.elementCorrections.set(element, updatedCorrections);
-          this.updateSidebar(element, updatedCorrections);
-        });
+          if (filteredCorrections.length === 0) {
+            this.clearElementHighlights(element);
+            this.sidebar?.setIssues([]);
+            return;
+          }
 
-        // Setup callback to actually apply the correction text
-        this.highlighter.setApplyCorrectionCallback(element, (_clickedElement, correction) => {
-          this.handleCorrectionFromPopover(element, correction);
-        });
+          this.elementCorrections.set(element, filteredCorrections);
 
-        logger.info(`Found ${filteredCorrections.length} corrections`);
-      } else {
-        this.clearElementHighlights(element);
+          // Highlight the corrections
+          this.rehighlightElement(element, filteredCorrections);
+          this.updateSidebar(element, filteredCorrections);
+
+          // Setup callback for when corrections are applied via clicking highlights
+          this.highlighter.setOnCorrectionApplied(element, (updatedCorrections) => {
+            this.elementCorrections.set(element, updatedCorrections);
+            this.updateSidebar(element, updatedCorrections);
+          });
+
+          // Setup callback to actually apply the correction text
+          this.highlighter.setApplyCorrectionCallback(element, (_clickedElement, correction) => {
+            this.handleCorrectionFromPopover(element, correction);
+          });
+
+          logger.info(`Found ${filteredCorrections.length} corrections for element`);
+        } else {
+          this.clearElementHighlights(element);
+        }
+      } catch (error) {
+        logger.error({ error }, 'Proofreading failed');
       }
-    } catch (error) {
-      logger.error({ error }, 'Proofreading failed');
-    }
+    });
   }
 
   private async initializeCorrectionPreferences(): Promise<void> {
@@ -608,6 +614,7 @@ export class ProofreadingManager {
     this.elementCanvasHighlighters.clear();
 
     this.elementPreviousText.clear();
+    this.proofreadQueue.clear();
 
     this.cleanupHandler(this.popoverHideCleanup);
     this.popoverHideCleanup = null;
