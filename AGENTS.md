@@ -35,6 +35,34 @@ Proofly is a privacy-first Chrome extension for proofreading that uses Chrome's 
 
 ## 🔧 Development Guidelines
 
+### Logging Guidelines
+
+**IMPORTANT**:
+- **ALWAYS use `logger.info()` for debugging** instead of console.log
+- **Use `logger.warn()` for warnings** instead of console.warn
+- **Use `logger.error()` for errors** instead of console.error
+- **NEVER add 'Proofly' prefix to log messages** - the logger handles context automatically
+- The logger is available at `src/services/logger.ts` and should be imported in all modules
+- Logger automatically includes context (background, content, options, etc.) and session information
+
+**Example**:
+```typescript
+import { logger } from '../services/logger.ts'
+
+// ✅ Good: Use logger for debugging
+logger.info('Processing proofread request', { textLength: text.length })
+logger.warn('Model not ready, queueing request')
+logger.error('Failed to proofread', { error })
+
+// ❌ Bad: Using console directly
+console.log('Processing request')
+console.warn('Model not ready')
+console.error('Failed to proofread')
+
+// ❌ Bad: Adding prefix manually
+logger.info('Proofly - Processing request') // Don't do this!
+```
+
 ### Build Verification
 
 **IMPORTANT**:

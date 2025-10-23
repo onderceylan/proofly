@@ -30,3 +30,6 @@ dist-ssr
 
 # AI assistance
 .mcp.json
+.claude
+.codex
+.cursor

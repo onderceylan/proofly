@@ -31,7 +31,7 @@ const flushLogsToStorage = async () => {
   }
 
   if (!checkChromeStorageAvailable()) {
-    console.warn('[Proofly Logger] chrome.storage not available, queued logs:', logQueue.length)
+    console.warn('proofly - chrome.storage not available, queued logs:', logQueue.length)
     isFlushScheduled = false
     return
   }
@@ -57,7 +57,7 @@ const flushLogsToStorage = async () => {
 
     await chrome.storage.local.set({ __dev_logs: logs })
   } catch (error) {
-    console.error('[Proofly Logger] Failed to flush logs:', error, 'Lost logs:', logsToFlush.length)
+    console.error('proofly - Failed to flush logs:', error, 'Lost logs:', logsToFlush.length)
     logQueue.unshift(...logsToFlush)
   }
 }
@@ -75,7 +75,7 @@ const scheduleFlush = () => {
 
   flushTimeout = setTimeout(() => {
     flushLogsToStorage().catch(err => {
-      console.error('[Proofly Logger] Flush error:', err)
+      console.error('proofly - Flush error:', err)
     })
   }, 100)
 }
@@ -100,7 +100,7 @@ const devLogSink = (logEvent: any) => {
     logQueue.push(entry)
     scheduleFlush()
   } catch (error) {
-    console.error('[Proofly Logger] Error queuing log:', error)
+    console.error('proofly - Error queuing log:', error)
   }
 }
 
@@ -110,6 +110,19 @@ export const p = pino({
     serialize: true,
     formatters: {
       level: (label) => ({ level: label }),
+      log: (object) => {
+        // Prepend 'proofly - ' prefix to all log messages
+        if ('msg' in object) {
+          if (typeof object.msg === 'string') {
+            object.msg = `proofly - ${object.msg}`
+          } else if (Array.isArray(object.msg)) {
+            object.msg = object.msg.map((m: any) =>
+              typeof m === 'string' ? `proofly - ${m}` : m
+            )
+          }
+        }
+        return object
+      },
     },
     transmit: {
       level: 'info',

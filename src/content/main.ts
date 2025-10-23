@@ -1,23 +1,23 @@
 import { logger } from "../services/logger.ts";
 
-logger.info('Proofly: TOP OF FILE - Script is loading!');
+logger.info('TOP OF FILE - Script is loading!');
 
 import { ProofreadingManager } from './proofreading-manager.ts';
 import { isModelReady } from '../shared/utils/storage.ts';
 
-logger.info({ test: 'structured-data', value: 123 }, 'Proofly: After imports');
+logger.info({ test: 'structured-data', value: 123 }, 'After imports');
 
 let manager: ProofreadingManager | null = null;
 
 async function initProofreading() {
-  logger.info('Proofly: Content script loaded');
+  logger.info('Content script loaded');
 
   try {
     const modelReady = await isModelReady();
-    logger.info({ modelReady }, 'Proofly: Model ready check:');
+    logger.info({ modelReady }, 'Model ready check:');
 
     if (!modelReady) {
-      logger.info('Proofly: AI model not ready. Please download the model from the extension options page.');
+      logger.info('AI model not ready. Please download the model from the extension options page.');
       return;
     }
 
@@ -28,11 +28,11 @@ async function initProofreading() {
     manager = new ProofreadingManager();
     await manager.initialize();
 
-    logger.info('Proofly: Proofreading enabled');
+    logger.info('Proofreading enabled');
     injectContentScriptMarker();
   } catch (error) {
     removeInjectedMarker();
-    console.error('Proofly: Failed to initialize:', error);
+    console.error('Failed to initialize:', error);
   }
 }
 
@@ -53,7 +53,7 @@ if (document.readyState === 'loading') {
 
 // CRXJS loader expects this export (keep for compatibility)
 export function onExecute(config?: { perf?: { injectTime: number; loadTime: number } }) {
-  logger.info(config, 'Proofly: onExecute called with config');
+  logger.info(config, 'onExecute called with config');
   // Already executed above, so this is a no-op
 }
 
