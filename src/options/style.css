@@ -291,7 +291,7 @@ input[type="checkbox"] {
 
 .underline-style-option:focus-within,
 .underline-style-option:hover,
-.underline-style-option:checked {
+.underline-style-option:has(input[type="radio"]:checked) {
   border-color: #4f46e5;
   box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
