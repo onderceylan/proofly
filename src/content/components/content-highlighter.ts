@@ -8,6 +8,7 @@ import type { UnderlineStyle } from '../../shared/types.ts';
 import './correction-popover.ts';
 import type { CorrectionPopover } from './correction-popover.ts';
 import { logger } from '../../services/logger.ts';
+import { replaceTextWithUndo } from '../../shared/utils/clipboard.ts';
 
 const ERROR_TYPES = [
   'spelling',
@@ -24,6 +25,7 @@ export class ContentHighlighter {
   private highlightedElements = new Map<HTMLElement, ProofreadCorrection[]>();
   private observers = new Map<HTMLElement, MutationObserver>();
   private highlights = new Map<string, Highlight>();
+  private elementRanges = new Map<HTMLElement, Range[]>();
   private popover: CorrectionPopover | null = null;
   private clickHandlers = new Map<HTMLElement, (e: MouseEvent) => void>();
   private onCorrectionAppliedCallbacks = new Map<HTMLElement, (updatedCorrections: ProofreadCorrection[]) => void>();
@@ -364,23 +366,12 @@ export class ContentHighlighter {
     // Check if there's a callback to handle the correction application
     const applyCallback = this.applyCorrectionCallbacks.get(element);
     if (applyCallback) {
-      // Delegate to the callback (ProofreadingManager) which knows how to handle mirrors
       applyCallback(element, correction);
       return;
     }
 
-    // Fallback: apply directly (for non-mirror elements)
-    const text = this.getElementText(element);
-    const newText =
-      text.substring(0, correction.startIndex) +
-      correction.correction +
-      text.substring(correction.endIndex);
-
-    if (element.tagName.toLowerCase() === 'textarea' || element.tagName.toLowerCase() === 'input') {
-      (element as HTMLInputElement | HTMLTextAreaElement).value = newText;
-    } else {
-      element.textContent = newText;
-    }
+    // Fallback: apply directly with undo support (for non-mirror elements like live test editor)
+    replaceTextWithUndo(element, correction.startIndex, correction.endIndex, correction.correction);
 
     const lengthDiff = correction.correction.length - (correction.endIndex - correction.startIndex);
 
@@ -414,10 +405,14 @@ export class ContentHighlighter {
     }
 
     this.clearSelectedCorrection();
+    CSS.highlights.delete(SELECTED_HIGHLIGHT);
+    this.selectedHighlight = new Highlight();
+    CSS.highlights.set(SELECTED_HIGHLIGHT, this.selectedHighlight);
   }
 
   clearHighlights(element: HTMLElement): void {
     this.highlightedElements.delete(element);
+    this.elementRanges.delete(element);
     this.removeHighlights(element);
     this.clearSelectedCorrection();
   }
@@ -426,6 +421,7 @@ export class ContentHighlighter {
     for (const element of this.highlightedElements.keys()) {
       this.clearHighlights(element);
     }
+    this.elementRanges.clear();
   }
 
   private isEditableElement(element: HTMLElement): boolean {
@@ -480,6 +476,8 @@ export class ContentHighlighter {
       return;
     }
 
+    const ranges: Range[] = [];
+
     for (const correction of corrections) {
       const range = new Range();
       try {
@@ -490,11 +488,15 @@ export class ContentHighlighter {
         const highlight = this.highlights.get(errorType);
         if (highlight) {
           highlight.add(range);
+          ranges.push(range);
         }
       } catch (error) {
         logger.warn(error, 'Failed to create highlight range');
       }
     }
+
+    // Track ranges for this element
+    this.elementRanges.set(element, ranges);
 
     this.reapplySelectedHighlight(element, textNode);
   }
@@ -513,8 +515,16 @@ export class ContentHighlighter {
   }
 
   private clearHighlightsForElement(element: HTMLElement): void {
-    for (const highlight of this.highlights.values()) {
-      highlight.clear();
+    // Remove only the ranges that belong to this element
+    const ranges = this.elementRanges.get(element);
+    if (ranges) {
+      for (const range of ranges) {
+        // Remove this range from all highlight registries
+        for (const highlight of this.highlights.values()) {
+          highlight.delete(range);
+        }
+      }
+      this.elementRanges.delete(element);
     }
 
     if (this.selectedElement === element) {

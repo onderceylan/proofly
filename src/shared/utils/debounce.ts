@@ -1,10 +1,15 @@
+export interface DebouncedFunction<F extends (...args: Parameters<F>) => ReturnType<F>> {
+  (...args: Parameters<F>): void;
+  cancel(): void;
+}
+
 export function debounce<F extends (...args: Parameters<F>) => ReturnType<F>>(
   fn: F,
   delayMs: number
-): (...args: Parameters<F>) => void {
+): DebouncedFunction<F> {
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
-  return function (this: unknown, ...args: Parameters<F>) {
+  const debounced = function (this: unknown, ...args: Parameters<F>) {
     if (timeoutId !== null) {
       clearTimeout(timeoutId);
     }
@@ -14,4 +19,13 @@ export function debounce<F extends (...args: Parameters<F>) => ReturnType<F>>(
       timeoutId = null;
     }, delayMs);
   };
+
+  debounced.cancel = function () {
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+  };
+
+  return debounced as DebouncedFunction<F>;
 }

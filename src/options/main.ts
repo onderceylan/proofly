@@ -7,7 +7,7 @@ import {
   createProofreaderAdapter,
   createProofreadingService,
 } from '../services/proofreader.ts';
-import { debounce } from '../shared/utils/debounce.ts';
+import { createProofreadingController } from '../shared/proofreading/controller.ts';
 import type { UnderlineStyle } from '../shared/types.ts';
 import {
   ALL_CORRECTION_TYPES,
@@ -21,9 +21,14 @@ import type {
   CorrectionTypeKey,
 } from '../shared/utils/correction-types.ts';
 import './style.css';
-import { logger}  from "../services/logger.ts";
 
 const LIVE_TEST_SAMPLE_TEXT = `This are a radnom text with a few classic common, and typicla typso and grammar issus. the Proofreader API hopefuly finds them all, lets see. Getting in the bus yea.`;
+
+interface LiveTestControls {
+  updateEnabledTypes(types: CorrectionTypeKey[]): void;
+  updateColors(config: CorrectionColorConfig): void;
+  proofread(): Promise<void>;
+}
 
 async function initOptions() {
   const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -57,6 +62,8 @@ async function initOptions() {
     let correctionColorConfig: CorrectionColorConfig = structuredClone(correctionColors);
     setActiveCorrectionColors(correctionColorConfig);
     let currentCorrectionThemes = buildCorrectionColorThemes(correctionColorConfig);
+    let liveTestControls: LiveTestControls | null = null;
+    let currentEnabledCorrectionTypes = [...enabledCorrectionTypes];
 
     const UNDERLINE_STYLE_TYPE: Record<UnderlineStyle, CorrectionTypeKey> = {
       solid: 'spelling',
@@ -85,7 +92,7 @@ async function initOptions() {
 
     const correctionTypeOptions = ALL_CORRECTION_TYPES.map((type: CorrectionTypeKey) => {
       const info = currentCorrectionThemes[type];
-      const checked = enabledCorrectionTypes.includes(type) ? 'checked' : '';
+      const checked = currentEnabledCorrectionTypes.includes(type) ? 'checked' : '';
       return `
             <label class="correction-type-option" data-type="${type}">
               <input type="checkbox" name="correctionType" value="${type}" ${checked} />
@@ -225,9 +232,22 @@ async function initOptions() {
         }
 
         const ordered = ALL_CORRECTION_TYPES.filter((type) => selectedValues.includes(type));
+        currentEnabledCorrectionTypes = ordered;
         await setStorageValue(STORAGE_KEYS.ENABLED_CORRECTION_TYPES, ordered);
+        liveTestControls?.updateEnabledTypes(ordered);
       });
     });
+
+    onStorageChange(
+      STORAGE_KEYS.ENABLED_CORRECTION_TYPES,
+      (newValue) => {
+        currentEnabledCorrectionTypes = [...newValue];
+        correctionTypeInputs.forEach((checkbox) => {
+          checkbox.checked = currentEnabledCorrectionTypes.includes(checkbox.value as CorrectionTypeKey);
+        });
+        liveTestControls?.updateEnabledTypes(currentEnabledCorrectionTypes);
+      }
+    );
 
     const updateOptionStyles = (type: CorrectionTypeKey) => {
       const theme = currentCorrectionThemes[type];
@@ -265,6 +285,7 @@ async function initOptions() {
         updateUnderlinePreviewStyles();
 
         await setStorageValue(STORAGE_KEYS.CORRECTION_COLORS, correctionColorConfig);
+        liveTestControls?.updateColors(correctionColorConfig);
       });
     });
 
@@ -291,6 +312,7 @@ async function initOptions() {
         updateUnderlinePreviewStyles();
 
         await setStorageValue(STORAGE_KEYS.CORRECTION_COLORS, correctionColorConfig);
+        liveTestControls?.updateColors(correctionColorConfig);
       });
     });
 
@@ -309,20 +331,23 @@ async function initOptions() {
           }
         }
         updateUnderlinePreviewStyles();
+        liveTestControls?.updateColors(correctionColorConfig);
       }
     );
 
     // Setup live test area proofreading
-    await setupLiveTestArea(enabledCorrectionTypes, correctionColorConfig);
+    liveTestControls = await setupLiveTestArea(currentEnabledCorrectionTypes, correctionColorConfig);
   }
 }
 
-async function setupLiveTestArea(initialEnabledTypes: CorrectionTypeKey[], initialColorConfig: CorrectionColorConfig) {
+async function setupLiveTestArea(
+  initialEnabledTypes: CorrectionTypeKey[],
+  initialColorConfig: CorrectionColorConfig
+): Promise<LiveTestControls | null> {
   const editor = document.getElementById('liveTestEditor');
-  if (!editor) return;
+  if (!editor) return null;
 
   const highlighter = new ContentHighlighter();
-  let proofreaderService: ReturnType<typeof createProofreadingService> | null = null;
   let enabledTypes = new Set<CorrectionTypeKey>(initialEnabledTypes);
   let colorConfig = structuredClone(initialColorConfig);
   let colorThemes = buildCorrectionColorThemes(colorConfig);
@@ -330,91 +355,110 @@ async function setupLiveTestArea(initialEnabledTypes: CorrectionTypeKey[], initi
   setActiveCorrectionColors(colorConfig);
   highlighter.setCorrectionColors(colorThemes);
 
-  const filterCorrections = (corrections: ProofreadCorrection[]): ProofreadCorrection[] => {
-    if (enabledTypes.size === 0) {
-      return [];
-    }
+  let proofreaderService: ReturnType<typeof createProofreadingService> | null = null;
 
-    return corrections.filter((correction) => {
-      if (!correction.type) {
-        return true;
-      }
-      return enabledTypes.has(correction.type as CorrectionTypeKey);
-    });
-  };
-
-  // Initialize proofreader
   try {
     const proofreader = await createProofreader();
     const adapter = createProofreaderAdapter(proofreader);
     proofreaderService = createProofreadingService(adapter);
-    logger.info('Proofreader initialized for live test area');
   } catch (error) {
-    logger.error({error}, 'Failed to initialize proofreader');
-    return;
+    console.error('Failed to initialize proofreader for live test area', error);
+    return null;
   }
 
-  // Setup debounced proofreading on input
-  const runProofread = async () => {
-    if (!proofreaderService || !editor) return;
-
-    const text = editor.textContent || '';
-
-    if (!proofreaderService.canProofread(text)) {
-      highlighter.clearHighlights(editor);
-      return;
-    }
-
-    try {
-      const result = await proofreaderService.proofread(text);
-
-      const filteredCorrections = filterCorrections(result.corrections);
-
-      if (filteredCorrections.length > 0) {
-        highlighter.highlight(editor, filteredCorrections);
-      } else {
-        highlighter.clearHighlights(editor);
+  const controller = createProofreadingController({
+    runProofread: async (_element, text) => {
+      if (!proofreaderService || !proofreaderService.canProofread(text)) {
+        return null;
       }
 
-      logger.info(`Found ${result.corrections.length} corrections`);
-    } catch (error) {
-      logger.error({error}, 'Proofreading failed');
-    }
-  };
+      return proofreaderService.proofread(text);
+    },
+    filterCorrections: (_element, corrections, text) => {
+      const trimmedLength = text.trimEnd().length;
+      return corrections
+        .filter((correction) => correction.startIndex < trimmedLength)
+        .filter((correction) => {
+          if (!correction.type) {
+            return true;
+          }
+          return enabledTypes.has(correction.type as CorrectionTypeKey);
+        });
+    },
+    debounceMs: 1000,
+    getElementText: (element) => element.textContent || '',
+  });
 
-  const debouncedProofread = debounce(runProofread, 1000);
+  controller.registerTarget({
+    element: editor,
+    hooks: {
+      highlight: (corrections) => {
+        highlighter.highlight(editor, corrections);
+      },
+      clearHighlights: () => {
+        highlighter.clearHighlights(editor);
+      },
+      onCorrectionsChange: () => undefined,
+    },
+  });
 
-  // Setup callback for when corrections are applied via popover
-  highlighter.setOnCorrectionApplied(editor, (updatedCorrections) => {
-    logger.info(`Correction applied, ${updatedCorrections.length} remaining`);
+  highlighter.setApplyCorrectionCallback(editor, (_target, correction) => {
+    controller.applyCorrection(editor, correction);
   });
 
   editor.addEventListener('input', () => {
-    debouncedProofread();
+    controller.scheduleProofread(editor);
   });
+
+  const refreshProofreading = async () => {
+    controller.resetElement(editor);
+    await controller.proofread(editor, { force: true });
+  };
+
+  const updateEnabledTypes = (types: CorrectionTypeKey[]) => {
+    enabledTypes = new Set(types);
+
+    if ('highlights' in CSS) {
+      for (const type of ALL_CORRECTION_TYPES) {
+        if (!enabledTypes.has(type)) {
+          const highlight = (CSS.highlights as any).get(type);
+          highlight?.clear?.();
+        }
+      }
+    }
+
+    void refreshProofreading();
+  };
+
+  const updateColors = (config: CorrectionColorConfig) => {
+    colorConfig = structuredClone(config);
+    colorThemes = buildCorrectionColorThemes(colorConfig);
+    setActiveCorrectionColors(colorConfig);
+    highlighter.setCorrectionColors(colorThemes);
+    void refreshProofreading();
+  };
 
   onStorageChange(
     STORAGE_KEYS.ENABLED_CORRECTION_TYPES,
     (newValue) => {
-      enabledTypes = new Set(newValue);
-      void runProofread();
+      updateEnabledTypes(newValue);
     }
   );
 
   onStorageChange(
     STORAGE_KEYS.CORRECTION_COLORS,
     (newValue) => {
-      colorConfig = structuredClone(newValue);
-      colorThemes = buildCorrectionColorThemes(colorConfig);
-      setActiveCorrectionColors(colorConfig);
-      highlighter.setCorrectionColors(colorThemes);
-      void runProofread();
+      updateColors(newValue);
     }
   );
 
-  await runProofread();
+  await refreshProofreading();
 
-  logger.info('Live test area setup complete');
+  return {
+    updateEnabledTypes,
+    updateColors,
+    proofread: () => refreshProofreading(),
+  };
 }
 
 initOptions();

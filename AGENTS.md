@@ -260,6 +260,41 @@ mcp__chrome-devtools__take_screenshot()
   const userName = user.name;
   ```
 
+#### Modern Web APIs Only
+
+**IMPORTANT: NO DEPRECATED APIs**
+
+- **NEVER use `document.execCommand()`**: This API is deprecated and should not be used
+- **Target: Chrome Browser**: We only target Chrome, so use any modern baseline Chrome APIs
+- **Use Modern Alternatives**:
+  - For text insertion: Use `setRangeText()` for textarea/input, Selection/Range API for contenteditable
+  - For clipboard: Use `navigator.clipboard` API (writeText, readText)
+  - For undo/redo: Implement custom undo manager with history stack
+
+**Example**:
+```typescript
+// ❌ Bad: Using deprecated execCommand
+document.execCommand('insertText', false, 'hello');
+document.execCommand('copy');
+
+// ✅ Good: Modern Chrome APIs
+// For textarea/input
+element.setRangeText('hello', start, end, 'end');
+
+// For clipboard
+await navigator.clipboard.writeText('hello');
+
+// For undo/redo
+undoManager.saveState(element);
+element.setRangeText(replacement, start, end);
+```
+
+**Rationale**:
+- `execCommand` is deprecated and will be removed from browsers
+- Modern APIs are more reliable and consistent
+- Custom undo manager gives us full control over undo/redo behavior
+- Ensures future compatibility
+
 ### Architectural Principles
 
 #### 1. Modularity & Loose Coupling

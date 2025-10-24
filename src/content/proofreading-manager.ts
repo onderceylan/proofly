@@ -1,4 +1,3 @@
-import { debounce } from '../shared/utils/debounce.ts';
 import { AsyncQueue } from '../shared/utils/queue.ts';
 import { ContentHighlighter } from './components/content-highlighter.ts';
 import { CanvasHighlighter } from './components/canvas-highlighter.ts';
@@ -16,7 +15,7 @@ import './components/issues-sidebar.ts';
 import type { IssuesSidebar, IssueItem } from './components/issues-sidebar.ts';
 import './components/correction-popover.ts';
 import type { CorrectionPopover } from './components/correction-popover.ts';
-import { logger } from "../services/logger.ts";
+import { logger } from '../services/logger.ts';
 import { getStorageValues, onStorageChange } from '../shared/utils/storage.ts';
 import { STORAGE_KEYS } from '../shared/constants.ts';
 import {
@@ -27,56 +26,63 @@ import {
   type CorrectionColorThemeMap,
   type CorrectionTypeKey,
 } from '../shared/utils/correction-types.ts';
+import { createProofreadingController } from '../shared/proofreading/controller.ts';
+import type { ProofreadingTargetHooks } from '../shared/proofreading/types.ts';
+import type { ProofreadCorrection, ProofreadResult } from '../shared/types.ts';
 
 export class ProofreadingManager {
-  private highlighter = new ContentHighlighter();
+  private readonly highlighter = new ContentHighlighter();
+  private readonly elementCanvasHighlighters = new Map<HTMLElement, CanvasHighlighter>();
+  private readonly proofreaderServices = new Map<string, ReturnType<typeof createProofreadingService>>();
+  private readonly proofreadQueue = new AsyncQueue();
+  private readonly registeredElements = new Set<HTMLElement>();
+
   private sidebar: IssuesSidebar | null = null;
   private popover: CorrectionPopover | null = null;
-  private activeElement: HTMLElement | null = null;
-  private observer: MutationObserver | null = null;
-  private elementCorrections = new Map<HTMLElement, ProofreadCorrection[]>();
-  private elementCanvasHighlighters = new Map<HTMLElement, CanvasHighlighter>();
-  private proofreaderServices = new Map<string, ReturnType<typeof createProofreadingService>>();
-  private languageDetectionService: ReturnType<typeof createLanguageDetectionService> | null = null;
-  private elementPreviousText = new Map<HTMLElement, string>();
-  private isApplyingCorrection = false;
-  private debouncedProofread: ((element: HTMLElement) => void) | null = null;
-  private activeCanvasHighlighter: CanvasHighlighter | null = null;
   private popoverHideCleanup: (() => void) | null = null;
+  private observer: MutationObserver | null = null;
+  private activeElement: HTMLElement | null = null;
+  private activeCanvasHighlighter: CanvasHighlighter | null = null;
+  private controller = createProofreadingController({
+    runProofread: (element, text) => this.runProofread(element, text),
+    filterCorrections: (_element, corrections, text) => this.filterCorrections(corrections, text),
+    debounceMs: 1000,
+    getElementText: (element) => this.getElementText(element),
+  });
+  private languageDetectionService: ReturnType<typeof createLanguageDetectionService> | null = null;
   private enabledCorrectionTypes = new Set<CorrectionTypeKey>();
   private correctionTypeCleanup: (() => void) | null = null;
   private correctionColors: CorrectionColorThemeMap = getActiveCorrectionColors();
   private correctionColorsCleanup: (() => void) | null = null;
-  private proofreadQueue = new AsyncQueue();
 
   async initialize(): Promise<void> {
-    // Initialize language detection service
-    try {
-      logger.info('Starting language detection initialization');
-      const detector = await createLanguageDetector();
-      logger.info('Language detector created');
-      const adapter = createLanguageDetectorAdapter(detector);
-      this.languageDetectionService = createLanguageDetectionService(adapter);
-      logger.info('Language detection service initialized successfully');
-    } catch (error) {
-      logger.warn({error}, 'Language detection not available, will fallback to English');
-      this.languageDetectionService = null;
-    }
-
-    logger.info('Setting up event listeners');
+    await this.initializeLanguageDetection();
     this.createSidebar();
     this.createPopover();
-    this.setupContextMenuHandler();
-    this.observeEditableElements();
     await this.initializeCorrectionPreferences();
-    logger.info('Event listeners set up - ready for input!');
+    this.observeEditableElements();
+    logger.info('Proofreading manager ready');
+  }
+
+  private async initializeLanguageDetection(): Promise<void> {
+    try {
+      const detector = await createLanguageDetector();
+      const adapter = createLanguageDetectorAdapter(detector);
+      this.languageDetectionService = createLanguageDetectionService(adapter);
+      logger.info('Language detection service initialized');
+    } catch (error) {
+      logger.warn({ error }, 'Language detection unavailable, using English fallback');
+      this.languageDetectionService = null;
+    }
   }
 
   private createSidebar(): void {
-    if (document.querySelector('proofly-issues-sidebar')) return;
-
-    this.sidebar = document.createElement('proofly-issues-sidebar') as IssuesSidebar;
-    document.body.appendChild(this.sidebar);
+    if (document.querySelector('proofly-issues-sidebar')) {
+      this.sidebar = document.querySelector('proofly-issues-sidebar') as IssuesSidebar;
+    } else {
+      this.sidebar = document.createElement('proofly-issues-sidebar') as IssuesSidebar;
+      document.body.appendChild(this.sidebar);
+    }
 
     this.sidebar.onApply((issue: IssueItem) => {
       this.applyCorrection(issue);
@@ -112,117 +118,49 @@ export class ProofreadingManager {
     cleanup?.();
   }
 
-  private setupContextMenuHandler(): void {
-    document.addEventListener('contextmenu', (e) => {
-      const target = e.target as HTMLElement;
-      if (this.isEditableElement(target)) {
-        this.activeElement = target;
-      }
-    });
-  }
-
-  private getCursorPosition(element: HTMLElement): number | null {
-    if (this.isTextareaOrInput(element)) {
-      const input = element as HTMLTextAreaElement | HTMLInputElement;
-      return input.selectionStart;
-    }
-    return null;
-  }
-
-  private clearHighlightsAfterCursor(element: HTMLElement): void {
-    const cursorPosition = this.getCursorPosition(element);
-    if (cursorPosition === null) return;
-
-    const corrections = this.elementCorrections.get(element);
-    if (!corrections || corrections.length === 0) return;
-
-    const validCorrections = corrections.filter(correction => correction.endIndex < cursorPosition);
-
-    if (validCorrections.length === 0) {
-      this.clearElementHighlights(element);
-      this.sidebar?.setIssues([]);
-    } else if (validCorrections.length < corrections.length) {
-      this.elementCorrections.set(element, validCorrections);
-      this.rehighlightElement(element, validCorrections);
-      this.updateSidebar(element, validCorrections);
-    }
-  }
-
-  private isOnlyTrailingSpaceAdded(element: HTMLElement, currentText: string): boolean {
-    const previousText = this.elementPreviousText.get(element) || '';
-
-    if (currentText.length <= previousText.length) {
-      return false;
-    }
-
-    const trimmedCurrent = currentText.trimEnd();
-    const trimmedPrevious = previousText.trimEnd();
-
-    return trimmedCurrent === trimmedPrevious && currentText !== trimmedCurrent;
-  }
-
   private observeEditableElements(): void {
-    this.debouncedProofread = debounce((element: HTMLElement) => {
-      void this.proofreadElement(element);
-    }, 1500);
+    const handleInput = (event: Event) => {
+      const target = event.target as HTMLElement;
+      if (!this.isEditableElement(target)) {
+        return;
+      }
+      this.registerElement(target);
+      this.controller.scheduleProofread(target);
+    };
 
-    const handleInput = (e: Event) => {
-      const target = e.target as HTMLElement;
-      if (this.isEditableElement(target)) {
-        if (this.isApplyingCorrection) {
-          return;
-        }
+    const handleFocus = (event: Event) => {
+      const target = event.target as HTMLElement;
+      if (!this.isEditableElement(target)) {
+        return;
+      }
+      this.activeElement = target;
+      this.registerElement(target);
+      void this.controller.proofread(target);
+    };
 
-        const currentText = this.getElementText(target);
-
-        this.clearHighlightsAfterCursor(target);
-
-        if (!this.isOnlyTrailingSpaceAdded(target, currentText)) {
-          this.debouncedProofread?.(target);
-        }
-
-        this.elementPreviousText.set(target, currentText);
+    const handleBlur = (event: Event) => {
+      const target = event.target as HTMLElement;
+      if (this.activeElement === target) {
+        this.activeElement = null;
+        this.sidebar?.setIssues([]);
       }
     };
 
     document.addEventListener('input', handleInput, true);
-
-    const handleFocus = (e: Event) => {
-      const target = e.target as HTMLElement;
-      if (this.isEditableElement(target)) {
-        const text = this.getElementText(target);
-        if (text && text.trim().length > 0) {
-          // Check if element has been proofread before
-          const hasCorrections = this.elementCorrections.has(target);
-          const hasPreviousText = this.elementPreviousText.has(target);
-
-          // Trigger immediate proofreading for pre-filled text (no debounce)
-          if (!hasCorrections && !hasPreviousText) {
-            void this.proofreadElement(target);
-            this.elementPreviousText.set(target, text);
-          }
-        }
-      }
-    };
-
     document.addEventListener('focus', handleFocus, true);
+    document.addEventListener('blur', handleBlur, true);
 
     this.observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
-        if (mutation.type === 'childList') {
-          mutation.addedNodes.forEach((node) => {
-            if (node.nodeType === Node.ELEMENT_NODE) {
-              const element = node as HTMLElement;
-              if (this.isEditableElement(element)) {
-                const text = this.getElementText(element);
-                if (text && text.length > 10) {
-                  // Proofread immediately for dynamically added elements with existing text
-                  void this.proofreadElement(element);
-                }
-              }
-            }
-          });
-        }
+        if (mutation.type !== 'childList') continue;
+        mutation.addedNodes.forEach((node) => {
+          if (node.nodeType !== Node.ELEMENT_NODE) return;
+          const element = node as HTMLElement;
+          if (this.isEditableElement(element)) {
+            this.registerElement(element);
+            void this.controller.proofread(element);
+          }
+        });
       }
     });
 
@@ -232,106 +170,181 @@ export class ProofreadingManager {
     });
   }
 
-  private async getOrCreateProofreaderService(language: string): Promise<ReturnType<typeof createProofreadingService>> {
-    if (this.proofreaderServices.has(language)) {
-      return this.proofreaderServices.get(language)!;
-    }
-
-    logger.info(`Creating proofreader for language: ${language}`);
-    const proofreader = await createProofreader({
-      expectedInputLanguages: [language],
-      includeCorrectionTypes: true,
-      includeCorrectionExplanations: true,
-      correctionExplanationLanguage: language,
-    });
-    const adapter = createProofreaderAdapter(proofreader);
-    const service = createProofreadingService(adapter);
-    this.proofreaderServices.set(language, service);
-    return service;
-  }
-
-  async proofreadElement(element: HTMLElement): Promise<void> {
-    const text = this.getElementText(element);
-    if (!text) {
-      this.clearElementHighlights(element);
+  private registerElement(element: HTMLElement): void {
+    if (this.registeredElements.has(element)) {
       return;
     }
 
-    this.elementPreviousText.set(element, text);
+    this.registeredElements.add(element);
 
-    // Queue the proofreading operation to avoid race conditions
-    // when multiple elements trigger proofreading simultaneously
-    await this.proofreadQueue.enqueue(async () => {
-      try {
-        // Detect the language of the text, fallback to English
-        let detectedLanguage: string | null = null;
+    const hooks = this.createTargetHooks(element);
+    this.controller.registerTarget({ element, hooks });
 
-        if (this.languageDetectionService) {
-          detectedLanguage = await this.languageDetectionService.detectLanguage(text);
-        }
+    if (this.isTextareaOrInput(element)) {
+      this.ensureCanvasHighlighter(element as HTMLTextAreaElement | HTMLInputElement);
+    } else {
+      this.setupContentEditableCallbacks(element);
+    }
+  }
 
-        // Fallback to English if language detection is not available or failed
-        const language = detectedLanguage || 'en';
+  private createTargetHooks(element: HTMLElement): ProofreadingTargetHooks {
+    if (this.isTextareaOrInput(element)) {
+      return {
+        highlight: (corrections) => {
+          this.highlightWithCanvas(element as HTMLTextAreaElement | HTMLInputElement, corrections);
+        },
+        clearHighlights: () => {
+          this.clearCanvasHighlights(element as HTMLTextAreaElement | HTMLInputElement);
+        },
+        onCorrectionsChange: (corrections) => {
+          this.handleCorrectionsChange(element, corrections);
+        },
+      };
+    }
 
-        if (!detectedLanguage) {
-          logger.info('Language detection unavailable or failed, using English as fallback');
-        }
+    return {
+      highlight: (corrections) => {
+        this.highlighter.highlight(element, corrections);
+      },
+      clearHighlights: () => {
+        this.highlighter.clearHighlights(element);
+      },
+      onCorrectionsChange: (corrections) => {
+        this.handleCorrectionsChange(element, corrections);
+      },
+    };
+  }
 
-        // Get or create a proofreader service for the detected language
-        const proofreaderService = await this.getOrCreateProofreaderService(language);
+  private ensureCanvasHighlighter(element: HTMLTextAreaElement | HTMLInputElement): CanvasHighlighter {
+    let canvasHighlighter = this.elementCanvasHighlighters.get(element);
+    if (!canvasHighlighter) {
+      canvasHighlighter = new CanvasHighlighter(element);
+      canvasHighlighter.setCorrectionColors(this.correctionColors);
+      canvasHighlighter.setOnCorrectionClick((correction, x, y) => {
+        this.activeCanvasHighlighter = canvasHighlighter!;
+        this.showPopoverForCorrection(element, correction, x, y);
+      });
+      this.elementCanvasHighlighters.set(element, canvasHighlighter);
+    }
+    return canvasHighlighter;
+  }
 
-        if (!proofreaderService.canProofread(text)) {
-          this.clearElementHighlights(element);
-          return;
-        }
+  private highlightWithCanvas(
+    element: HTMLTextAreaElement | HTMLInputElement,
+    corrections: ProofreadCorrection[]
+  ): void {
+    const highlighter = this.ensureCanvasHighlighter(element);
+    highlighter.drawHighlights(corrections);
+  }
 
-        const result = await proofreaderService.proofread(text);
+  private clearCanvasHighlights(element: HTMLTextAreaElement | HTMLInputElement): void {
+    const highlighter = this.elementCanvasHighlighters.get(element);
+    highlighter?.clearHighlights();
+    if (this.activeCanvasHighlighter === highlighter) {
+      this.activeCanvasHighlighter = null;
+    }
+  }
 
-        const currentText = this.getElementText(element);
-        if (currentText !== text) {
-          logger.info('Text changed during proofreading, discarding stale results');
-          return;
-        }
-
-        if (result.corrections && result.corrections.length > 0) {
-          const trimmedLength = text.trimEnd().length;
-          const trimmedCorrections = result.corrections.filter(correction =>
-            correction.startIndex < trimmedLength
-          );
-
-          const filteredCorrections = trimmedCorrections.filter((correction) => this.isCorrectionEnabled(correction));
-
-          if (filteredCorrections.length === 0) {
-            this.clearElementHighlights(element);
-            this.sidebar?.setIssues([]);
-            return;
-          }
-
-          this.elementCorrections.set(element, filteredCorrections);
-
-          // Highlight the corrections
-          this.rehighlightElement(element, filteredCorrections);
-          this.updateSidebar(element, filteredCorrections);
-
-          // Setup callback for when corrections are applied via clicking highlights
-          this.highlighter.setOnCorrectionApplied(element, (updatedCorrections) => {
-            this.elementCorrections.set(element, updatedCorrections);
-            this.updateSidebar(element, updatedCorrections);
-          });
-
-          // Setup callback to actually apply the correction text
-          this.highlighter.setApplyCorrectionCallback(element, (_clickedElement, correction) => {
-            this.handleCorrectionFromPopover(element, correction);
-          });
-
-          logger.info(`Found ${filteredCorrections.length} corrections for element`);
-        } else {
-          this.clearElementHighlights(element);
-        }
-      } catch (error) {
-        logger.error({ error }, 'Proofreading failed');
-      }
+  private setupContentEditableCallbacks(element: HTMLElement): void {
+    this.highlighter.setApplyCorrectionCallback(element, (_target, correction) => {
+      this.controller.applyCorrection(element, correction);
     });
+  }
+
+  private handleCorrectionsChange(element: HTMLElement, corrections: ProofreadCorrection[]): void {
+    if (this.activeElement === element) {
+      this.updateSidebar(element, corrections);
+    }
+  }
+
+  private async runProofread(_element: HTMLElement, text: string): Promise<ProofreadResult | null> {
+    return this.proofreadQueue.enqueue(async () => {
+      let detectedLanguage: string | null = null;
+
+      if (this.languageDetectionService) {
+        try {
+          detectedLanguage = await this.languageDetectionService.detectLanguage(text);
+        } catch (error) {
+          logger.warn({ error }, 'Language detection failed, falling back to English');
+          detectedLanguage = null;
+        }
+      }
+
+      const language = detectedLanguage || 'en';
+      const service = await this.getOrCreateProofreaderService(language);
+      if (!service.canProofread(text)) {
+        return null;
+      }
+
+      return service.proofread(text);
+    });
+  }
+
+  private filterCorrections(corrections: ProofreadCorrection[], text: string): ProofreadCorrection[] {
+    const trimmedLength = text.trimEnd().length;
+    return corrections
+      .filter((correction) => correction.startIndex < trimmedLength)
+      .filter((correction) => this.isCorrectionEnabled(correction));
+  }
+
+  private handleCorrectionFromPopover(element: HTMLElement, correction: ProofreadCorrection): void {
+    this.controller.applyCorrection(element, correction);
+  }
+
+  private applyCorrection(issue: IssueItem): void {
+    this.controller.applyCorrection(issue.element, issue.correction);
+  }
+
+  private isCorrectionEnabled(correction: ProofreadCorrection): boolean {
+    if (this.enabledCorrectionTypes.size === 0) {
+      return false;
+    }
+
+    if (!correction.type) {
+      return true;
+    }
+
+    return this.enabledCorrectionTypes.has(correction.type as CorrectionTypeKey);
+  }
+
+  private showPopoverForCorrection(
+    element: HTMLElement,
+    correction: ProofreadCorrection,
+    x: number,
+    y: number
+  ): void {
+    if (!this.popover) {
+      return;
+    }
+
+    this.popover.setCorrection(correction, (applied) => {
+      this.handleCorrectionFromPopover(element, applied);
+    });
+
+    this.popover.show(x, y + 20);
+  }
+
+  private updateSidebar(element: HTMLElement, corrections: ProofreadCorrection[]): void {
+    if (!this.sidebar) {
+      return;
+    }
+
+    if (this.activeElement !== element) {
+      return;
+    }
+
+    if (corrections.length === 0) {
+      this.sidebar.setIssues([]);
+      return;
+    }
+
+    const issues: IssueItem[] = corrections.map((correction, index) => ({
+      element,
+      correction,
+      index,
+    }));
+
+    this.sidebar.setIssues(issues);
   }
 
   private async initializeCorrectionPreferences(): Promise<void> {
@@ -373,192 +386,33 @@ export class ProofreadingManager {
   }
 
   private refreshCorrectionsForTrackedElements(): void {
-    const elements = new Set<HTMLElement>();
-
-    this.elementCorrections.forEach((_value, key) => {
-      elements.add(key);
-    });
-
-    this.elementPreviousText.forEach((_value, key) => {
-      elements.add(key);
-    });
-
-    if (this.activeElement) {
-      elements.add(this.activeElement);
-    }
-
-    elements.forEach((element) => {
+    for (const element of this.registeredElements) {
       if (this.isEditableElement(element)) {
-        void this.proofreadElement(element);
+        void this.controller.proofread(element);
       }
+    }
+  }
+
+  private async getOrCreateProofreaderService(language: string): Promise<ReturnType<typeof createProofreadingService>> {
+    if (this.proofreaderServices.has(language)) {
+      return this.proofreaderServices.get(language)!;
+    }
+
+    logger.info(`Creating proofreader for language: ${language}`);
+    const proofreader = await createProofreader({
+      expectedInputLanguages: [language],
+      includeCorrectionTypes: true,
+      includeCorrectionExplanations: true,
+      correctionExplanationLanguage: language,
     });
-  }
-
-  private isCorrectionEnabled(correction: ProofreadCorrection): boolean {
-    if (this.enabledCorrectionTypes.size === 0) {
-      return false;
-    }
-
-    if (!correction.type) {
-      return true;
-    }
-
-    return this.enabledCorrectionTypes.has(correction.type as CorrectionTypeKey);
-  }
-
-  private highlightWithCanvas(element: HTMLTextAreaElement | HTMLInputElement, corrections: ProofreadCorrection[]): void {
-    // Create or reuse canvas highlighter for this element
-    let canvasHighlighter = this.elementCanvasHighlighters.get(element);
-
-    if (!canvasHighlighter) {
-      canvasHighlighter = new CanvasHighlighter(element);
-      this.elementCanvasHighlighters.set(element, canvasHighlighter);
-
-      const highlighterInstance = canvasHighlighter;
-      // Setup click handler for popover
-      canvasHighlighter.setOnCorrectionClick((correction, x, y) => {
-        this.activeCanvasHighlighter = highlighterInstance;
-        this.showPopoverForCorrection(element, correction, x, y);
-      });
-      canvasHighlighter.setCorrectionColors(this.correctionColors);
-    }
-
-    // Draw highlights on canvas
-    canvasHighlighter.drawHighlights(corrections);
-  }
-
-  private showPopoverForCorrection(element: HTMLElement, correction: ProofreadCorrection, x: number, y: number): void {
-    if (!this.popover) return;
-
-    this.popover.setCorrection(correction, (appliedCorrection) => {
-      this.handleCorrectionFromPopover(element, appliedCorrection);
-    });
-
-    this.popover.show(x, y + 20); // Show below the click point
-  }
-
-  private rehighlightElement(element: HTMLElement, corrections: ProofreadCorrection[]): void {
-    if (this.isTextareaOrInput(element)) {
-      this.highlightWithCanvas(element as HTMLTextAreaElement | HTMLInputElement, corrections);
-    } else {
-      this.highlighter.highlight(element, corrections);
-    }
-  }
-
-  private updateCorrectionsAfterApply(
-    element: HTMLElement,
-    appliedCorrection: ProofreadCorrection
-  ): ProofreadCorrection[] | null {
-    const corrections = this.elementCorrections.get(element);
-    if (!corrections) return null;
-
-    const lengthDiff = appliedCorrection.correction.length - (appliedCorrection.endIndex - appliedCorrection.startIndex);
-
-    return corrections
-      .filter(c => c !== appliedCorrection)
-      .map(c => {
-        if (c.startIndex > appliedCorrection.startIndex) {
-          return {
-            ...c,
-            startIndex: c.startIndex + lengthDiff,
-            endIndex: c.endIndex + lengthDiff
-          };
-        }
-        return c;
-      });
-  }
-
-  private applyCorrectionToElement(element: HTMLElement, correction: ProofreadCorrection): void {
-    const text = this.getElementText(element);
-    if (!text) return;
-
-    // Apply the correction
-    if (this.isTextareaOrInput(element)) {
-      this.applyCorrectionWithUndo(element as HTMLTextAreaElement | HTMLInputElement, correction);
-    } else {
-      const newText =
-        text.substring(0, correction.startIndex) +
-        correction.correction +
-        text.substring(correction.endIndex);
-      this.setElementText(element, newText);
-    }
-
-    // Update tracked text
-    const newText = this.getElementText(element);
-    this.elementPreviousText.set(element, newText);
-
-    // Update remaining corrections
-    const updatedCorrections = this.updateCorrectionsAfterApply(element, correction);
-    if (updatedCorrections !== null) {
-      this.elementCorrections.set(element, updatedCorrections);
-
-      if (updatedCorrections.length > 0) {
-        this.rehighlightElement(element, updatedCorrections);
-        this.updateSidebar(element, updatedCorrections);
-      } else {
-        this.clearElementHighlights(element);
-        this.sidebar?.setIssues([]);
-      }
-    }
-
-    // Trigger re-proofreading
-    this.debouncedProofread?.(element);
-  }
-
-  private clearElementHighlights(element: HTMLElement): void {
-    // Clear canvas highlights for textarea/input
-    if (this.isTextareaOrInput(element)) {
-      const canvasHighlighter = this.elementCanvasHighlighters.get(element);
-      if (canvasHighlighter) {
-        canvasHighlighter.clearHighlights();
-        if (this.activeCanvasHighlighter === canvasHighlighter) {
-          this.activeCanvasHighlighter = null;
-        }
-      }
-    } else {
-      // Clear DOM highlights for contenteditable
-      this.highlighter.clearHighlights(element);
-    }
-    this.elementCorrections.delete(element);
-  }
-
-  private isTextareaOrInput(element: HTMLElement): element is HTMLTextAreaElement | HTMLInputElement {
-    const tagName = element.tagName.toLowerCase();
-    return tagName === 'textarea' || tagName === 'input';
-  }
-
-  async proofreadActiveElement(): Promise<void> {
-    if (!this.activeElement) return;
-
-    await this.proofreadElement(this.activeElement);
-    this.sidebar?.show();
-  }
-
-  private updateSidebar(element: HTMLElement, corrections: ProofreadCorrection[]): void {
-    if (!this.sidebar) return;
-
-    const issues: IssueItem[] = corrections.map((correction, index) => ({
-      element,
-      correction,
-      index,
-    }));
-
-    this.sidebar.setIssues(issues);
-  }
-
-  private handleCorrectionFromPopover(element: HTMLElement, correction: ProofreadCorrection): void {
-    this.applyCorrectionToElement(element, correction);
-  }
-
-  private applyCorrection(issue: IssueItem): void {
-    const { element, correction } = issue;
-    this.applyCorrectionToElement(element, correction);
+    const adapter = createProofreaderAdapter(proofreader);
+    const service = createProofreadingService(adapter);
+    this.proofreaderServices.set(language, service);
+    return service;
   }
 
   private isEditableElement(element: HTMLElement): boolean {
     const tagName = element.tagName.toLowerCase();
-
-    if (tagName === 'proofly-issues-sidebar') return false;
 
     if (tagName === 'textarea') {
       return true;
@@ -572,98 +426,44 @@ export class ProofreadingManager {
     return element.isContentEditable || element.hasAttribute('contenteditable');
   }
 
-  private getElementText(element: HTMLElement): string {
+  private isTextareaOrInput(element: HTMLElement): element is HTMLTextAreaElement | HTMLInputElement {
     const tagName = element.tagName.toLowerCase();
+    return tagName === 'textarea' || tagName === 'input';
+  }
 
-    if (tagName === 'textarea' || tagName === 'input') {
-      return (element as HTMLInputElement | HTMLTextAreaElement).value;
+  private getElementText(element: HTMLElement): string {
+    if (this.isTextareaOrInput(element)) {
+      return (element as HTMLTextAreaElement | HTMLInputElement).value;
     }
-
     return element.textContent || '';
   }
 
-  private setElementText(element: HTMLElement, text: string): void {
-    this.isApplyingCorrection = true;
-
-    try {
-      const tagName = element.tagName.toLowerCase();
-
-      if (tagName === 'textarea' || tagName === 'input') {
-        (element as HTMLInputElement | HTMLTextAreaElement).value = text;
-        element.dispatchEvent(new Event('input', { bubbles: true }));
-      } else {
-        element.textContent = text;
-      }
-    } finally {
-      this.isApplyingCorrection = false;
+  async proofreadActiveElement(): Promise<void> {
+    if (!this.activeElement) {
+      return;
     }
-  }
 
-  private applyCorrectionWithUndo(element: HTMLTextAreaElement | HTMLInputElement, correction: ProofreadCorrection): void {
-    this.isApplyingCorrection = true;
-
-    try {
-      const originalStart = element.selectionStart;
-      const originalEnd = element.selectionEnd;
-
-      element.focus();
-      element.setSelectionRange(correction.startIndex, correction.endIndex);
-
-      const isSupported = document.execCommand('insertText', false, correction.correction);
-
-      if (!isSupported) {
-        const text = element.value;
-        const before = text.substring(0, correction.startIndex);
-        const after = text.substring(correction.endIndex);
-        element.value = before + correction.correction + after;
-
-        const newPosition = correction.startIndex + correction.correction.length;
-        element.setSelectionRange(newPosition, newPosition);
-        element.dispatchEvent(new Event('input', { bubbles: true }));
-      }
-
-      if (originalStart !== null && originalEnd !== null) {
-        const lengthDiff = correction.correction.length - (correction.endIndex - correction.startIndex);
-        let newStart = originalStart;
-        let newEnd = originalEnd;
-
-        if (originalStart > correction.endIndex) {
-          newStart = originalStart + lengthDiff;
-        } else if (originalStart > correction.startIndex) {
-          newStart = correction.startIndex + correction.correction.length;
-        }
-
-        if (originalEnd > correction.endIndex) {
-          newEnd = originalEnd + lengthDiff;
-        } else if (originalEnd > correction.startIndex) {
-          newEnd = correction.startIndex + correction.correction.length;
-        }
-
-        element.setSelectionRange(newStart, newEnd);
-      }
-    } finally {
-      this.isApplyingCorrection = false;
-    }
+    await this.controller.proofread(this.activeElement);
   }
 
   destroy(): void {
+    this.controller.dispose();
+
     this.highlighter.destroy();
     this.sidebar?.remove();
     this.popover?.remove();
     this.observer?.disconnect();
 
-    this.elementCanvasHighlighters.forEach(highlighter => highlighter.destroy());
+    this.elementCanvasHighlighters.forEach((highlighter) => highlighter.destroy());
     this.elementCanvasHighlighters.clear();
 
-    // Clean up all proofreader services
-    this.proofreaderServices.forEach(service => service.destroy());
+    this.proofreaderServices.forEach((service) => service.destroy());
     this.proofreaderServices.clear();
 
-    // Clean up language detection service
     this.languageDetectionService?.destroy();
     this.languageDetectionService = null;
 
-    this.elementPreviousText.clear();
+    this.registeredElements.clear();
     this.proofreadQueue.clear();
 
     this.cleanupHandler(this.popoverHideCleanup);
