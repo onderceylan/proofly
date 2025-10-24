@@ -7,6 +7,11 @@ import {
   createProofreaderAdapter,
   createProofreadingService,
 } from '../services/proofreader.ts';
+import {
+  createLanguageDetector,
+  createLanguageDetectorAdapter,
+  createLanguageDetectionService,
+} from '../services/language-detector.ts';
 import './components/issues-sidebar.ts';
 import type { IssuesSidebar, IssueItem } from './components/issues-sidebar.ts';
 import './components/correction-popover.ts';
@@ -31,7 +36,8 @@ export class ProofreadingManager {
   private observer: MutationObserver | null = null;
   private elementCorrections = new Map<HTMLElement, ProofreadCorrection[]>();
   private elementCanvasHighlighters = new Map<HTMLElement, CanvasHighlighter>();
-  private proofreaderService: ReturnType<typeof createProofreadingService> | null = null;
+  private proofreaderServices = new Map<string, ReturnType<typeof createProofreadingService>>();
+  private languageDetectionService: ReturnType<typeof createLanguageDetectionService> | null = null;
   private elementPreviousText = new Map<HTMLElement, string>();
   private isApplyingCorrection = false;
   private debouncedProofread: ((element: HTMLElement) => void) | null = null;
@@ -44,17 +50,17 @@ export class ProofreadingManager {
   private proofreadQueue = new AsyncQueue();
 
   async initialize(): Promise<void> {
-    // Initialize proofreader service
+    // Initialize language detection service
     try {
-      logger.info('Starting proofreader initialization');
-      const proofreader = await createProofreader();
-      logger.info('Proofreader created');
-      const adapter = createProofreaderAdapter(proofreader);
-      this.proofreaderService = createProofreadingService(adapter);
-      logger.info('Proofreader service initialized successfully');
+      logger.info('Starting language detection initialization');
+      const detector = await createLanguageDetector();
+      logger.info('Language detector created');
+      const adapter = createLanguageDetectorAdapter(detector);
+      this.languageDetectionService = createLanguageDetectionService(adapter);
+      logger.info('Language detection service initialized successfully');
     } catch (error) {
-      logger.error({error}, 'Failed to initialize proofreader');
-      return;
+      logger.warn({error}, 'Language detection not available, will fallback to English');
+      this.languageDetectionService = null;
     }
 
     logger.info('Setting up event listeners');
@@ -226,13 +232,27 @@ export class ProofreadingManager {
     });
   }
 
-  async proofreadElement(element: HTMLElement): Promise<void> {
-    if (!this.proofreaderService) {
-      return;
+  private async getOrCreateProofreaderService(language: string): Promise<ReturnType<typeof createProofreadingService>> {
+    if (this.proofreaderServices.has(language)) {
+      return this.proofreaderServices.get(language)!;
     }
 
+    logger.info(`Creating proofreader for language: ${language}`);
+    const proofreader = await createProofreader({
+      expectedInputLanguages: [language],
+      includeCorrectionTypes: true,
+      includeCorrectionExplanations: true,
+      correctionExplanationLanguage: language,
+    });
+    const adapter = createProofreaderAdapter(proofreader);
+    const service = createProofreadingService(adapter);
+    this.proofreaderServices.set(language, service);
+    return service;
+  }
+
+  async proofreadElement(element: HTMLElement): Promise<void> {
     const text = this.getElementText(element);
-    if (!text || !this.proofreaderService.canProofread(text)) {
+    if (!text) {
       this.clearElementHighlights(element);
       return;
     }
@@ -243,7 +263,29 @@ export class ProofreadingManager {
     // when multiple elements trigger proofreading simultaneously
     await this.proofreadQueue.enqueue(async () => {
       try {
-        const result = await this.proofreaderService!.proofread(text);
+        // Detect the language of the text, fallback to English
+        let detectedLanguage: string | null = null;
+
+        if (this.languageDetectionService) {
+          detectedLanguage = await this.languageDetectionService.detectLanguage(text);
+        }
+
+        // Fallback to English if language detection is not available or failed
+        const language = detectedLanguage || 'en';
+
+        if (!detectedLanguage) {
+          logger.info('Language detection unavailable or failed, using English as fallback');
+        }
+
+        // Get or create a proofreader service for the detected language
+        const proofreaderService = await this.getOrCreateProofreaderService(language);
+
+        if (!proofreaderService.canProofread(text)) {
+          this.clearElementHighlights(element);
+          return;
+        }
+
+        const result = await proofreaderService.proofread(text);
 
         const currentText = this.getElementText(element);
         if (currentText !== text) {
@@ -612,6 +654,14 @@ export class ProofreadingManager {
 
     this.elementCanvasHighlighters.forEach(highlighter => highlighter.destroy());
     this.elementCanvasHighlighters.clear();
+
+    // Clean up all proofreader services
+    this.proofreaderServices.forEach(service => service.destroy());
+    this.proofreaderServices.clear();
+
+    // Clean up language detection service
+    this.languageDetectionService?.destroy();
+    this.languageDetectionService = null;
 
     this.elementPreviousText.clear();
     this.proofreadQueue.clear();

@@ -46,9 +46,11 @@ export class ModelDownloaderComponent extends HTMLElement {
         return;
       }
 
-      const availability = await this.downloader.checkAvailability();
+      const proofreaderAvailability = await this.downloader.checkProofreaderAvailability();
+      // Check language detector availability to trigger download if needed
+      await this.downloader.checkLanguageDetectorAvailability();
 
-      if (availability === 'unavailable') {
+      if (proofreaderAvailability === 'unavailable') {
         this.showError(
           'Proofreader API is unavailable on this device. Requirements:\n' +
           '• Chrome 128 or later\n' +
@@ -59,7 +61,7 @@ export class ModelDownloaderComponent extends HTMLElement {
         return;
       }
 
-      if (availability === 'available') {
+      if (proofreaderAvailability === 'available') {
         await chrome.storage.local.set({
           [STORAGE_KEYS.MODEL_DOWNLOADED]: true,
           [STORAGE_KEYS.PROOFREADER_READY]: true,
@@ -117,14 +119,17 @@ export class ModelDownloaderComponent extends HTMLElement {
     this.elements.progress.value = progress.progress;
 
     const percent = Math.floor(progress.progress * 100);
-    let text = `${percent}%`;
+    const modelLabel = progress.modelType === 'language-detector' ? 'Language Detection' : 'Proofreader';
+    let text = `${modelLabel}: ${percent}%`;
 
     if (progress.state === 'downloading' && progress.bytesDownloaded && progress.totalBytes) {
       const downloaded = this.formatBytes(progress.bytesDownloaded);
       const total = this.formatBytes(progress.totalBytes);
-      text = `${downloaded} / ${total} (${percent}%)`;
+      text = `${modelLabel}: ${downloaded} / ${total} (${percent}%)`;
     } else if (progress.state === 'extracting') {
-      text = 'Extracting model...';
+      text = `Extracting ${modelLabel.toLowerCase()} model...`;
+    } else if (progress.state === 'checking') {
+      text = `Checking ${modelLabel.toLowerCase()} availability...`;
     }
 
     this.elements.progressText.textContent = text;
@@ -170,7 +175,7 @@ export class ModelDownloaderComponent extends HTMLElement {
   private showSuccess() {
     if (!this.elements.container || !this.elements.status) return;
 
-    this.elements.status.textContent = '✓ Model ready';
+    this.elements.status.textContent = '✓ Models ready';
     this.elements.status.style.display = 'block';
     this.elements.status.className = 'status success';
     this.hideProgress();
@@ -362,7 +367,7 @@ export class ModelDownloaderComponent extends HTMLElement {
 
     const description = document.createElement('p');
     description.className = 'description';
-    description.textContent = 'Download the AI model to enable on-device proofreading. This is a one-time setup.';
+    description.textContent = 'Download the AI models to enable on-device proofreading with language detection. This is a one-time setup.';
 
     const requirements = document.createElement('div');
     requirements.className = 'requirements';
