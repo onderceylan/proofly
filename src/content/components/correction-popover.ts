@@ -6,6 +6,8 @@ export class CorrectionPopover extends HTMLElement {
   private onApply: ((correction: ProofreadCorrection) => void) | null = null;
   private clickOutsideHandler: ((e: MouseEvent) => void) | null = null;
   private keydownHandler: ((e: KeyboardEvent) => void) | null = null;
+  private isAnimating: boolean = false;
+  private hideTimeoutId: number | null = null;
 
   constructor() {
     super();
@@ -27,6 +29,13 @@ export class CorrectionPopover extends HTMLElement {
   }
 
   show(x: number, y: number): void {
+    // Cancel any pending hide animation
+    if (this.hideTimeoutId !== null) {
+      clearTimeout(this.hideTimeoutId);
+      this.hideTimeoutId = null;
+      this.isAnimating = false;
+    }
+
     // Show popover first to get its dimensions
     this.showPopover();
 
@@ -57,6 +66,12 @@ export class CorrectionPopover extends HTMLElement {
     this.style.left = `${x}px`;
     this.style.top = `${y}px`;
 
+    // Trigger flip in animation
+    if (this.contentElement) {
+      this.contentElement.classList.remove('flip-out');
+      this.contentElement.classList.add('flip-in');
+    }
+
     // Add click outside listener after a small delay to avoid immediate close
     setTimeout(() => {
       this.clickOutsideHandler = (e: MouseEvent) => {
@@ -80,6 +95,8 @@ export class CorrectionPopover extends HTMLElement {
   }
 
   hide(): void {
+    if (this.isAnimating) return;
+
     // Remove click outside listener
     if (this.clickOutsideHandler) {
       document.removeEventListener('click', this.clickOutsideHandler, true);
@@ -91,8 +108,27 @@ export class CorrectionPopover extends HTMLElement {
       this.keydownHandler = null;
     }
 
-    this.hidePopover();
-    this.dispatchEvent(new CustomEvent('proofly:popover-hide'));
+    // Check if user prefers reduced motion
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    if (this.contentElement && !prefersReducedMotion) {
+      this.isAnimating = true;
+      this.contentElement.classList.remove('flip-in');
+      this.contentElement.classList.add('flip-out');
+
+      // Wait for animation to complete before hiding
+      const animationDuration = 100; // matches fadeOut duration
+      this.hideTimeoutId = window.setTimeout(() => {
+        this.hidePopover();
+        this.isAnimating = false;
+        this.hideTimeoutId = null;
+        this.dispatchEvent(new CustomEvent('proofly:popover-hide'));
+      }, animationDuration);
+    } else {
+      // No animation, hide immediately
+      this.hidePopover();
+      this.dispatchEvent(new CustomEvent('proofly:popover-hide'));
+    }
   }
 
   private updateContent(): void {
@@ -160,10 +196,35 @@ export class CorrectionPopover extends HTMLElement {
         max-width: 320px;
         min-width: 180px;
         background: transparent;
+        overflow: hidden;
       }
 
       :host::backdrop {
         background: transparent;
+      }
+
+      @keyframes flipYIn {
+        0% {
+          opacity: 0;
+          transform: perspective(800px) rotateX(-45deg);
+        }
+        99.9% {
+          opacity: 1;
+          transform: perspective(800px) rotateX(0deg);
+        }
+        100% {
+          opacity: 1;
+          transform: none;
+        }
+      }
+
+      @keyframes fadeOut {
+        0% {
+          opacity: 1;
+        }
+        100% {
+          opacity: 0;
+        }
       }
 
       .popover-content {
@@ -172,7 +233,23 @@ export class CorrectionPopover extends HTMLElement {
         border-radius: 0.5rem;
         box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
         padding: 0;
-        overflow: hidden;
+        overflow-x: hidden;
+        overflow-y: hidden;
+      }
+
+      .popover-content.flip-in {
+        animation: flipYIn 150ms ease-out forwards;
+      }
+
+      .popover-content.flip-out {
+        animation: fadeOut 100ms ease-in forwards;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .popover-content.flip-in,
+        .popover-content.flip-out {
+          animation: none;
+        }
       }
 
       .correction-header {
