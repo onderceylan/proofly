@@ -18,37 +18,37 @@ interface CorrectionTypeBase {
 
 export const CORRECTION_TYPES = {
   spelling: {
-    color: '#dc2626',
+    color: '#EE3120',
     label: 'Spelling',
     description: 'Fixes misspelled words so text stays readable.',
     example: 'Example: "teh" -> "the"',
   },
   grammar: {
-    color: '#2563eb',
+    color: '#F29F05',
     label: 'Grammar',
     description: 'Improves sentence structure and subject-verb agreement.',
-    example: 'Example: "She go" -> "She goes"',
+    example: 'Example: "This are" -> "This is"',
   },
   punctuation: {
-    color: '#7c3aed',
+    color: '#FF00FF',
     label: 'Punctuation',
     description: 'Adds or fixes commas, periods, and other punctuation marks.',
     example: 'Example: "Lets eat grandma" -> "Let\'s eat, grandma"',
   },
   capitalization: {
-    color: '#ea580c',
+    color: '#66C4D9',
     label: 'Capitalization',
     description: 'Corrects uppercase and lowercase usage in text.',
     example: 'Example: "i love Proofly" -> "I love Proofly"',
   },
   preposition: {
-    color: '#0891b2',
+    color: '#F27405',
     label: 'Preposition',
     description: 'Suggests more natural prepositions in phrases.',
     example: 'Example: "on the bus" -> "in the bus"',
   },
   'missing-words': {
-    color: '#16a34a',
+    color: '#71A64B',
     label: 'Missing Words',
     description: 'Identifies spots where a word should be added.',
     example: 'Example: "I going store" -> "I am going to the store"',
