@@ -23,6 +23,7 @@ import type {
   CorrectionColorConfigEntry,
   CorrectionTypeKey,
 } from '../shared/utils/correction-types.ts';
+import { isMacOS } from '../shared/utils/platform.ts';
 import './style.css';
 
 const LIVE_TEST_SAMPLE_TEXT = `This are a radnom text with a few classic common, and typicla typso and grammar issus. the Proofreader API hopefuly finds them all, lets see. Getting in the bus yea.`;
@@ -84,7 +85,7 @@ async function initOptions() {
       });
     }, 500);
 
-    const isMac = /mac/i.test(navigator.platform);
+    const isMac = isMacOS();
     const displayMap: Record<string, string> = isMac
       ? { Mod: '⌘', Shift: '⇧', Alt: '⌥' }
       : { Mod: 'Ctrl', Shift: 'Shift', Alt: 'Alt' };
@@ -179,7 +180,7 @@ async function initOptions() {
       return `
             <prfly-checkbox class="option-card" data-type="${type}" name="correctionType" value="${type}" ${checked}>
               <div class="correction-type-content">
-                <span class="correction-type-chip" style="border-color: ${info.border}; background: ${info.background}; color: ${info.color};">${info.label}</span>
+                <span class="correction-type-chip" style="border-color: ${info.border}; background: ${info.background}; color: ${info.color}; -webkit-text-stroke: 0.2px rgba(0,0,0,0.3)">${info.label}</span>
                 <span class="correction-type-description">
                   ${info.description}
                   <span class="correction-type-example">${info.example}</span>
@@ -244,7 +245,8 @@ async function initOptions() {
                 >
                   <div class="setting-option-content">
                     <span id="autofixTitle" class="setting-option-title">Autofix on double-click</span>
-                    <span class="setting-option-description">Double-click issues to apply corrections immediately. When enabled, single-click won't show the correction popover.</span>
+                    <span class="setting-option-description">Fix issues by double-clicking on them.</span>
+                    <p class="setting-option-hint">Single-click won't show the correction popover.</p>
                   </div>
                 </prfly-checkbox>
               </div>
@@ -282,7 +284,7 @@ async function initOptions() {
 
           <section class="settings-section full-width live-test-area">
             <h2>Live Test Area</h2>
-            <p class="section-description">Try out the proofreading functionality below. Type or paste text with errors to see real-time corrections. <br>Update your preferences and test them live.</p>
+            <p class="section-description">Try out the proofreading functionality below. Type text with errors to see real-time corrections. <br>Update your preferences and test them live.</p>
             <div
               id="liveTestEditor"
               class="live-test-editor"

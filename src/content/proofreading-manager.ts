@@ -37,6 +37,7 @@ import {
   type Issue as SessionIssue,
   type IssueColorPalette,
 } from './target-session.ts';
+import { isMacOS } from '../shared/utils/platform.ts';
 
 export class ProofreadingManager {
   private readonly highlighter = new ContentHighlighter();
@@ -72,7 +73,7 @@ export class ProofreadingManager {
   private shortcutStorageCleanup: (() => void) | null = null;
   private autofixCleanup: (() => void) | null = null;
   private shortcutKeydownHandler: ((event: KeyboardEvent) => void) | null = null;
-  private readonly isMacPlatform = /mac/i.test(navigator.platform);
+  private readonly isMacPlatform = isMacOS();
 
   async initialize(): Promise<void> {
     await this.initializeLanguageDetection();

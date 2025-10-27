@@ -7,6 +7,7 @@
  */
 
 import { logger } from '../../services/logger.ts';
+import { isMacOS } from './platform.ts';
 
 interface UndoState<T = unknown> {
   text: string;
@@ -305,7 +306,7 @@ export class UndoManager {
    */
   private setupKeyboardShortcuts(element: HTMLElement): (event: KeyboardEvent) => void {
     const handleKeydown = (e: KeyboardEvent) => {
-      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+      const isMac = isMacOS();
       const ctrlKey = isMac ? e.metaKey : e.ctrlKey;
 
       // Undo: Ctrl+Z (or Cmd+Z on Mac)
