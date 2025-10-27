@@ -76,7 +76,7 @@ export class ProofreadingController {
       debouncedProofread,
       isApplyingCorrection: false,
       isRestoringFromHistory: false,
-      lastText: this.getElementText(element),
+      lastText: '',
     });
 
     undoManager.initElement(element, (metadata) => {
@@ -122,6 +122,12 @@ export class ProofreadingController {
     }
 
     const text = this.getElementText(element);
+
+    // Skip proofreading if text hasn't changed and not forced
+    if (!options.force && text === state.lastText) {
+      return;
+    }
+
     const trimmed = text.trim();
 
     if (trimmed.length === 0) {

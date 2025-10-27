@@ -684,7 +684,7 @@ async function setupLiveTestArea(
 
   editor.addEventListener('focus', () => {
     if (options.isAutoCorrectEnabled()) {
-      void controller.proofread(editor, { force: true });
+      void controller.proofread(editor);
     }
   });
 
