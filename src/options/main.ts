@@ -25,6 +25,7 @@ import type {
 } from '../shared/utils/correction-types.ts';
 import { isMacOS } from '../shared/utils/platform.ts';
 import './style.css';
+import { logger } from "../services/logger.ts";
 
 const LIVE_TEST_SAMPLE_TEXT = `This are a radnom text with a few classic common, and typicla typso and grammar issus. the Proofreader API hopefuly finds them all, lets see. Getting in the bus yea.`;
 
@@ -81,7 +82,7 @@ async function initOptions() {
     const DEFAULT_PROOFREAD_SHORTCUT = STORAGE_DEFAULTS[STORAGE_KEYS.PROOFREAD_SHORTCUT];
     const persistCorrectionColors = debounce((config: CorrectionColorConfig) => {
       void setStorageValue(STORAGE_KEYS.CORRECTION_COLORS, structuredClone(config)).catch((error) => {
-        console.error('Failed to persist correction colors', error);
+        logger.error({ error }, 'Failed to persist correction colors');
       });
     }, 500);
 
@@ -351,7 +352,7 @@ async function initOptions() {
         currentProofreadShortcut = value;
         updateShortcutDisplay();
         void setStorageValue(STORAGE_KEYS.PROOFREAD_SHORTCUT, value).catch((error) => {
-          console.error('Failed to persist proofread shortcut', error);
+          logger.error('Failed to persist proofread shortcut', error);
         });
       } else {
         updateShortcutDisplay();
@@ -417,7 +418,7 @@ async function initOptions() {
       currentProofreadShortcut = DEFAULT_PROOFREAD_SHORTCUT;
       updateShortcutDisplay();
       void setStorageValue(STORAGE_KEYS.PROOFREAD_SHORTCUT, DEFAULT_PROOFREAD_SHORTCUT).catch((error) => {
-        console.error('Failed to reset proofread shortcut', error);
+        logger.error({ error },'Failed to reset proofread shortcut');
       });
     });
 
@@ -463,7 +464,13 @@ async function initOptions() {
       document.querySelectorAll<ProoflyCheckbox>('prfly-checkbox[name="correctionType"]')
     );
     correctionTypeCheckboxes.forEach((checkbox) => {
-      checkbox.addEventListener('change', async () => {
+      checkbox.addEventListener('change', async (event) => {
+        // Ignore change events that bubble up from descendant elements (like color inputs)
+        // Only handle changes that originate from the checkbox itself
+        if (event.target !== event.currentTarget) {
+          return;
+        }
+
         const selectedValues = correctionTypeCheckboxes
           .filter((item) => item.checked)
           .map((item) => item.value as CorrectionTypeKey);
@@ -632,7 +639,7 @@ async function setupLiveTestArea(
     const adapter = createProofreaderAdapter(proofreader);
     proofreaderService = createProofreadingService(adapter);
   } catch (error) {
-    console.error('Failed to initialize proofreader for live test area', error);
+    logger.error({ error }, 'Failed to initialize proofreader for live test area');
     return null;
   }
 
@@ -717,7 +724,6 @@ async function setupLiveTestArea(
     colorThemes = buildCorrectionColorThemes(colorConfig);
     setActiveCorrectionColors(colorConfig);
     highlighter.setCorrectionColors(colorThemes);
-    void refreshProofreading();
   };
 
   onStorageChange(

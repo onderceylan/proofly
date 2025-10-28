@@ -481,7 +481,6 @@ export class ProofreadingManager {
       (newValue) => {
         const updatedConfig: CorrectionColorConfig = structuredClone(newValue);
         this.updateCorrectionColors(updatedConfig);
-        this.refreshCorrectionsForTrackedElements();
       }
     );
 
