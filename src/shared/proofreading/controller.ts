@@ -197,6 +197,10 @@ export class ProofreadingController {
     return this.states.get(element)?.corrections ?? [];
   }
 
+  isRestoringFromHistory(element: HTMLElement): boolean {
+    return this.states.get(element)?.isRestoringFromHistory ?? false;
+  }
+
   resetElement(element: HTMLElement): void {
     const state = this.states.get(element);
     if (!state) {

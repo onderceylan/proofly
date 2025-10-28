@@ -276,7 +276,9 @@ export class ProofreadingManager {
           this.controller.applyCorrection(element, correction);
         },
         onInvalidateIssues: () => {
-          this.clearSessionHighlights(element);
+          if (!this.controller.isRestoringFromHistory(element)) {
+            this.clearSessionHighlights(element);
+          }
         },
       });
       session.attach();
