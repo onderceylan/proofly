@@ -3,6 +3,7 @@ import { getCorrectionTypeColor } from '../../shared/utils/correction-types.ts';
 export class CorrectionPopover extends HTMLElement {
   private contentElement: HTMLDivElement | null = null;
   private currentCorrection: ProofreadCorrection | null = null;
+  private issueText: string = '';
   private onApply: ((correction: ProofreadCorrection) => void) | null = null;
   private clickOutsideHandler: ((e: MouseEvent) => void) | null = null;
   private keydownHandler: ((e: KeyboardEvent) => void) | null = null;
@@ -14,16 +15,18 @@ export class CorrectionPopover extends HTMLElement {
     this.attachShadow({ mode: 'open' });
   }
 
-  connectedCallback() {
+   connectedCallback() {
     this.setAttribute('popover', 'manual');
     this.render();
   }
 
   setCorrection(
     correction: ProofreadCorrection,
+    issueText: string,
     onApply: (correction: ProofreadCorrection) => void
   ): void {
     this.currentCorrection = correction;
+    this.issueText = issueText;
     this.onApply = onApply;
     this.updateContent();
   }
@@ -139,6 +142,11 @@ export class CorrectionPopover extends HTMLElement {
 
     if (!content) return;
 
+    const suggestionDisplay = this.formatSuggestion(
+      this.currentCorrection.correction,
+      this.issueText
+    );
+
     content.innerHTML = `
       <div class="correction-header">
         <span class="correction-type" style="background: ${colors.background}; color: ${colors.color}; border: 1px solid ${colors.border};">
@@ -148,7 +156,7 @@ export class CorrectionPopover extends HTMLElement {
       </div>
       <div class="correction-body">
         <div class="correction-suggestion">
-          <strong>Suggestion:</strong> ${this.escapeHtml(this.currentCorrection.correction)}
+          <strong>Suggestion:</strong> ${suggestionDisplay}
         </div>
         ${this.currentCorrection.explanation ? `
           <div class="correction-explanation">
@@ -179,6 +187,20 @@ export class CorrectionPopover extends HTMLElement {
     }
   }
 
+  private formatSuggestion(suggestion: string, issueText: string): string {
+    const escapedSuggestion = this.escapeHtml(suggestion);
+
+    if (escapedSuggestion === '') {
+      return `<span style="text-decoration: line-through; color: var(--color-error);">${this.escapeHtml(issueText)}</span>`;
+    }
+
+    if (suggestion === ' ') {
+      return '" "';
+    }
+
+    return escapedSuggestion;
+  }
+
   private escapeHtml(text: string): string {
     const div = document.createElement('div');
     div.textContent = text;
@@ -197,6 +219,19 @@ export class CorrectionPopover extends HTMLElement {
         min-width: 180px;
         background: transparent;
         overflow: hidden;
+
+        --color-surface: #ffffff;
+        --color-border: #e5e7eb;
+        --color-text-primary: #111827;
+        --color-text-secondary: #374151;
+        --color-text-tertiary: #6b7280;
+        --color-surface-subtle: #f9fafb;
+        --color-surface-hover: #f3f4f6;
+        --color-primary: #4f46e5;
+        --color-primary-hover: #4338ca;
+        --color-primary-active: #3730a3;
+        --color-on-primary: #ffffff;
+        --color-error: #dc2626;
       }
 
       :host::backdrop {
@@ -228,8 +263,8 @@ export class CorrectionPopover extends HTMLElement {
       }
 
       .popover-content {
-        background: #ffffff;
-        border: 1px solid #e5e7eb;
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
         border-radius: 0.5rem;
         box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
         padding: 0;
@@ -254,7 +289,7 @@ export class CorrectionPopover extends HTMLElement {
 
       .correction-header {
         padding: 0.75rem;
-        border-bottom: 1px solid #e5e7eb;
+        border-bottom: 1px solid var(--color-border);
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -272,7 +307,7 @@ export class CorrectionPopover extends HTMLElement {
       .close-button {
         background: transparent;
         border: none;
-        color: #6b7280;
+        color: var(--color-text-tertiary);
         font-size: 1rem;
         line-height: 1;
         cursor: pointer;
@@ -282,8 +317,8 @@ export class CorrectionPopover extends HTMLElement {
       }
 
       .close-button:hover {
-        background: #f3f4f6;
-        color: #111827;
+        background: var(--color-surface-hover);
+        color: var(--color-text-primary);
       }
 
       .correction-body {
@@ -292,32 +327,32 @@ export class CorrectionPopover extends HTMLElement {
 
       .correction-suggestion {
         font-size: 0.875rem;
-        color: #111827;
+        color: var(--color-text-primary);
         margin-bottom: 0.5rem;
       }
 
       .correction-suggestion strong {
         font-weight: 600;
-        color: #374151;
+        color: var(--color-text-secondary);
       }
 
       .correction-explanation {
         font-size: 0.75rem;
-        color: #6b7280;
+        color: var(--color-text-tertiary);
         line-height: 1.5;
         font-style: italic;
       }
 
       .correction-actions {
         padding: 0.75rem;
-        border-top: 1px solid #e5e7eb;
-        background: #f9fafb;
+        border-top: 1px solid var(--color-border);
+        background: var(--color-surface-subtle);
       }
 
       .apply-button {
         width: 100%;
-        background: #4f46e5;
-        color: white;
+        background: var(--color-primary);
+        color: var(--color-on-primary);
         border: none;
         padding: 0.5rem 1rem;
         border-radius: 0.375rem;
@@ -328,11 +363,11 @@ export class CorrectionPopover extends HTMLElement {
       }
 
       .apply-button:hover {
-        background: #4338ca;
+        background: var(--color-primary-hover);
       }
 
       .apply-button:active {
-        background: #3730a3;
+        background: var(--color-primary-active);
       }
     `;
   }

@@ -10,8 +10,6 @@ import {
   createLanguageDetectorAdapter,
   createLanguageDetectionService,
 } from '../services/language-detector.ts';
-import './components/issues-sidebar.ts';
-import type { IssuesSidebar, IssueItem } from './components/issues-sidebar.ts';
 import './components/correction-popover.ts';
 import type { CorrectionPopover } from './components/correction-popover.ts';
 import { logger } from '../services/logger.ts';
@@ -38,6 +36,14 @@ import {
   type IssueColorPalette,
 } from './target-session.ts';
 import { isMacOS } from '../shared/utils/platform.ts';
+import {
+  normalizeIssueLabel,
+  resolveElementKind,
+  toSidepanelIssue,
+  type IssueElementGroup,
+  type IssuesUpdateMessage,
+  type IssuesUpdatePayload,
+} from '../shared/messages/issues.ts';
 
 export class ProofreadingManager {
   private readonly highlighter = new ContentHighlighter();
@@ -47,12 +53,16 @@ export class ProofreadingManager {
   private readonly proofreadQueue = new AsyncQueue();
   private readonly registeredElements = new Set<HTMLElement>();
 
-  private sidebar: IssuesSidebar | null = null;
   private popover: CorrectionPopover | null = null;
   private popoverHideCleanup: (() => void) | null = null;
   private observer: MutationObserver | null = null;
   private activeElement: HTMLElement | null = null;
   private activeSessionElement: HTMLElement | null = null;
+  private readonly pageId = crypto.randomUUID();
+  private readonly elementIds = new WeakMap<HTMLElement, string>();
+  private readonly elementLookup = new Map<string, HTMLElement>();
+  private readonly elementCorrections = new Map<HTMLElement, ProofreadCorrection[]>();
+  private pendingIssuesUpdate = false;
   private controller = createProofreadingController({
     runProofread: (element, text) => this.runProofread(element, text),
     filterCorrections: (_element, corrections, text) => this.filterCorrections(corrections, text),
@@ -77,11 +87,11 @@ export class ProofreadingManager {
 
   async initialize(): Promise<void> {
     await this.initializeLanguageDetection();
-    this.createSidebar();
     this.createPopover();
     await this.initializeCorrectionPreferences();
     await this.initializeProofreadPreferences();
     this.observeEditableElements();
+    this.emitIssuesUpdate();
     logger.info('Proofreading manager ready');
   }
 
@@ -95,19 +105,6 @@ export class ProofreadingManager {
       logger.warn({ error }, 'Language detection unavailable, using English fallback');
       this.languageDetectionService = null;
     }
-  }
-
-  private createSidebar(): void {
-    if (document.querySelector('proofly-issues-sidebar')) {
-      this.sidebar = document.querySelector('proofly-issues-sidebar') as IssuesSidebar;
-    } else {
-      this.sidebar = document.createElement('proofly-issues-sidebar') as IssuesSidebar;
-      document.body.appendChild(this.sidebar);
-    }
-
-    this.sidebar.onApply((issue: IssueItem) => {
-      this.applyCorrection(issue);
-    });
   }
 
   private createPopover(): void {
@@ -165,13 +162,13 @@ export class ProofreadingManager {
       if (this.shouldAutoProofread()) {
         void this.controller.proofread(target);
       }
+      this.emitIssuesUpdate();
     };
 
     const handleBlur = (event: Event) => {
       const target = event.target as HTMLElement;
       if (this.activeElement === target) {
         this.activeElement = null;
-        this.sidebar?.setIssues([]);
       }
     };
 
@@ -207,6 +204,7 @@ export class ProofreadingManager {
     }
 
     this.registeredElements.add(element);
+    this.getElementId(element);
 
     const hooks = this.createTargetHooks(element);
     this.controller.registerTarget({ element, hooks });
@@ -274,6 +272,7 @@ export class ProofreadingManager {
           }
           // Apply correction immediately without showing popover
           this.controller.applyCorrection(element, correction);
+          this.scheduleIssuesUpdate();
         },
         onInvalidateIssues: () => {
           if (!this.controller.isRestoringFromHistory(element)) {
@@ -315,9 +314,11 @@ export class ProofreadingManager {
     session?.setIssues([]);
     session?.clearActiveIssue();
     this.elementIssueLookup.delete(element);
+    this.elementCorrections.delete(element);
     if (this.activeSessionElement === element) {
       this.activeSessionElement = null;
     }
+    this.emitIssuesUpdate();
   }
 
   private mapCorrectionsToIssues(
@@ -356,13 +357,168 @@ export class ProofreadingManager {
   private setupContentEditableCallbacks(element: HTMLElement): void {
     this.highlighter.setApplyCorrectionCallback(element, (_target, correction) => {
       this.controller.applyCorrection(element, correction);
+      this.scheduleIssuesUpdate();
+    });
+
+    this.highlighter.setOnCorrectionApplied(element, (updatedCorrections) => {
+      this.handleCorrectionsChange(element, updatedCorrections);
     });
   }
 
   private handleCorrectionsChange(element: HTMLElement, corrections: ProofreadCorrection[]): void {
-    if (this.activeElement === element) {
-      this.updateSidebar(element, corrections);
+    this.storeElementCorrections(element, corrections);
+    this.updateElementCorrectionLookup(element, corrections);
+    this.scheduleIssuesUpdate();
+  }
+
+  private storeElementCorrections(element: HTMLElement, corrections: ProofreadCorrection[]): void {
+    if (corrections.length === 0) {
+      this.elementCorrections.delete(element);
+      return;
     }
+
+    this.elementCorrections.set(element, corrections);
+  }
+
+  private updateElementCorrectionLookup(element: HTMLElement, corrections: ProofreadCorrection[]): void {
+    if (corrections.length === 0) {
+      this.elementIssueLookup.delete(element);
+      return;
+    }
+
+    const lookup = new Map<string, ProofreadCorrection>();
+    corrections
+      .filter((correction) => correction.endIndex > correction.startIndex)
+      .forEach((correction, index) => {
+        lookup.set(this.buildIssueId(correction, index), correction);
+      });
+
+    this.elementIssueLookup.set(element, lookup);
+  }
+
+  private emitIssuesUpdate(): void {
+    const entries = Array.from(this.elementCorrections.entries()).filter(([, corrections]) => corrections.length > 0);
+    entries.sort(([elementA], [elementB]) => {
+      if (elementA === elementB) {
+        return 0;
+      }
+
+      const position = elementA.compareDocumentPosition(elementB);
+      if (position & Node.DOCUMENT_POSITION_FOLLOWING) {
+        return -1;
+      }
+      if (position & Node.DOCUMENT_POSITION_PRECEDING) {
+        return 1;
+      }
+      return 0;
+    });
+
+    const elements: IssueElementGroup[] = [];
+
+    for (const [element, corrections] of entries) {
+
+      const text = this.getElementText(element);
+      const elementId = this.getElementId(element);
+
+      const issues = corrections
+        .filter((correction) => correction.endIndex > correction.startIndex)
+        .map((correction, index) => {
+          const issueId = this.buildIssueId(correction, index);
+          const originalText = this.extractOriginalText(text, correction);
+          return toSidepanelIssue(elementId, correction, originalText, issueId);
+        })
+        .filter((issue) => issue.originalText.length > 0 || issue.replacementText.length > 0);
+
+      if (issues.length === 0) {
+        continue;
+      }
+
+      elements.push({
+        elementId,
+        domId: element.id ? element.id : null,
+        kind: resolveElementKind(element),
+        label: normalizeIssueLabel(element),
+        issues,
+      });
+    }
+
+    const activeElementId = this.activeElement ? this.getElementId(this.activeElement) : null;
+    const activeElementLabel = this.activeElement ? normalizeIssueLabel(this.activeElement) : null;
+    const activeElementKind = this.activeElement ? resolveElementKind(this.activeElement) : null;
+
+    const payload: IssuesUpdatePayload = {
+      pageId: this.pageId,
+      activeElementId,
+      activeElementLabel,
+      activeElementKind,
+      elements,
+    };
+
+    const message: IssuesUpdateMessage = { type: 'proofly:issues-update', payload };
+
+    void chrome.runtime.sendMessage(message).catch((error) => {
+      logger.warn({ error }, 'Failed to broadcast issues update');
+    });
+  }
+
+  private extractOriginalText(text: string, correction: ProofreadCorrection): string {
+    if (!text) {
+      return '';
+    }
+
+    const maxIndex = text.length;
+    const safeStart = Math.max(0, Math.min(correction.startIndex, maxIndex));
+    const safeEnd = Math.max(safeStart, Math.min(correction.endIndex, maxIndex));
+    return text.slice(safeStart, safeEnd);
+  }
+
+  private getElementId(element: HTMLElement): string {
+    let identifier = this.elementIds.get(element);
+    if (!identifier) {
+      identifier = crypto.randomUUID();
+      this.elementIds.set(element, identifier);
+      this.elementLookup.set(identifier, element);
+    }
+    return identifier;
+  }
+
+  applyIssue(elementId: string, issueId: string): void {
+    const element = this.elementLookup.get(elementId);
+    if (!element) {
+      logger.warn({ elementId, issueId }, 'Issue apply requested for unknown element');
+      return;
+    }
+
+    const correction = this.resolveCorrectionForIssue(element, issueId);
+    if (!correction) {
+      logger.warn({ elementId, issueId }, 'Missing correction for requested issue');
+      return;
+    }
+
+    this.controller.applyCorrection(element, correction);
+    this.scheduleIssuesUpdate();
+  }
+
+  private resolveCorrectionForIssue(element: HTMLElement, issueId: string): ProofreadCorrection | null {
+    const lookup = this.elementIssueLookup.get(element);
+    if (lookup?.has(issueId)) {
+      return lookup.get(issueId) ?? null;
+    }
+
+    const corrections = this.elementCorrections.get(element);
+    if (!corrections) {
+      return null;
+    }
+
+    for (let index = 0; index < corrections.length; index += 1) {
+      const correction = corrections[index];
+      const currentId = this.buildIssueId(correction, index);
+      if (currentId === issueId) {
+        return correction;
+      }
+    }
+
+    return null;
   }
 
   private async runProofread(_element: HTMLElement, text: string): Promise<ProofreadResult | null> {
@@ -397,10 +553,7 @@ export class ProofreadingManager {
 
   private handleCorrectionFromPopover(element: HTMLElement, correction: ProofreadCorrection): void {
     this.controller.applyCorrection(element, correction);
-  }
-
-  private applyCorrection(issue: IssueItem): void {
-    this.controller.applyCorrection(issue.element, issue.correction);
+    this.scheduleIssuesUpdate();
   }
 
   private isCorrectionEnabled(correction: ProofreadCorrection): boolean {
@@ -425,34 +578,17 @@ export class ProofreadingManager {
       return;
     }
 
-    this.popover.setCorrection(correction, (applied) => {
+    const elementText = this.getElementText(element);
+    const issueText = elementText.substring(
+      correction.startIndex,
+      correction.endIndex
+    );
+
+    this.popover.setCorrection(correction, issueText, (applied) => {
       this.handleCorrectionFromPopover(element, applied);
     });
 
     this.popover.show(x, y);
-  }
-
-  private updateSidebar(element: HTMLElement, corrections: ProofreadCorrection[]): void {
-    if (!this.sidebar) {
-      return;
-    }
-
-    if (this.activeElement !== element) {
-      return;
-    }
-
-    if (corrections.length === 0) {
-      this.sidebar.setIssues([]);
-      return;
-    }
-
-    const issues: IssueItem[] = corrections.map((correction, index) => ({
-      element,
-      correction,
-      index,
-    }));
-
-    this.sidebar.setIssues(issues);
   }
 
   private async initializeCorrectionPreferences(): Promise<void> {
@@ -557,6 +693,17 @@ export class ProofreadingManager {
   private updateAutofixOnDoubleClick(enabled: boolean): void {
     this.autofixOnDoubleClick = enabled;
     this.elementSessions.forEach((session) => session.setAutofixOnDoubleClick(enabled));
+  }
+
+  private scheduleIssuesUpdate(): void {
+    if (this.pendingIssuesUpdate) {
+      return;
+    }
+    this.pendingIssuesUpdate = true;
+    queueMicrotask(() => {
+      this.pendingIssuesUpdate = false;
+      this.emitIssuesUpdate();
+    });
   }
 
   private refreshCorrectionsForTrackedElements(): void {
@@ -694,12 +841,13 @@ export class ProofreadingManager {
     this.controller.dispose();
 
     this.highlighter.destroy();
-    this.sidebar?.remove();
     this.popover?.remove();
     this.observer?.disconnect();
 
     this.elementSessions.forEach((session) => session.detach());
     this.elementSessions.clear();
+    this.elementCorrections.clear();
+    this.elementLookup.clear();
     this.elementIssueLookup.clear();
 
     this.proofreaderServices.forEach((service) => service.destroy());

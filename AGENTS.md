@@ -691,7 +691,7 @@ document.addEventListener('input', async (e) => {
 ```typescript
 chrome.contextMenus.create({
   id: 'prooflyCheck',
-  title: 'Check with Proofly',
+  title: 'Proofread with Proofly',
   contexts: ['selection', 'editable']
 });
 ```

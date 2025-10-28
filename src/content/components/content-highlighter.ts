@@ -214,7 +214,13 @@ export class ContentHighlighter {
 
     this.highlightSelectedCorrection(element, clickedCorrection);
 
-    this.popover.setCorrection(clickedCorrection, (appliedCorrection) => {
+    const elementText = this.getElementText(element);
+    const issueText = elementText.substring(
+      clickedCorrection.startIndex,
+      clickedCorrection.endIndex
+    );
+
+    this.popover.setCorrection(clickedCorrection, issueText, (appliedCorrection) => {
       this.applyCorrection(element, appliedCorrection);
     });
 

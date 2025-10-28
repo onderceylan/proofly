@@ -1,11 +1,6 @@
 import { logger } from "../services/logger.ts";
-
-logger.info('TOP OF FILE - Script is loading!');
-
 import { ProofreadingManager } from './proofreading-manager.ts';
 import { isModelReady } from '../shared/utils/storage.ts';
-
-logger.info({ test: 'structured-data', value: 123 }, 'After imports');
 
 let manager: ProofreadingManager | null = null;
 
@@ -30,7 +25,7 @@ async function initProofreading() {
 
     logger.info('Proofreading enabled');
   } catch (error) {
-    console.error('Failed to initialize:', error);
+    logger.error({ error }, 'Failed to initialize');
   }
 }
 
@@ -38,8 +33,20 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === 'proofread-selection') {
     manager?.proofreadActiveElement();
     sendResponse({ success: true });
+    return true;
   }
-  return true;
+
+  if (message.type === 'proofly:apply-issue') {
+    if (message.payload?.elementId && message.payload?.issueId) {
+      manager?.applyIssue(message.payload.elementId, message.payload.issueId);
+      sendResponse({ success: true });
+    } else {
+      sendResponse({ success: false });
+    }
+    return true;
+  }
+
+  return false;
 });
 
 // Execute immediately - bypass CRXJS loader
