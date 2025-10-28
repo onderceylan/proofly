@@ -1,5 +1,6 @@
 import '../shared/components/model-downloader.ts';
 import '../shared/components/checkbox.ts';
+import '../shared/components/logo.ts';
 import type { ProoflyCheckbox } from '../shared/components/checkbox.ts';
 import { debounce } from '../shared/utils/debounce.ts';
 import { isModelReady, getStorageValues, onStorageChange, setStorageValue } from '../shared/utils/storage.ts';
@@ -188,7 +189,7 @@ async function initOptions() {
                 </span>
                 <div class="correction-type-colors">
                   <label>
-                    <span>Accent</span>
+                    <span>Color</span>
                     <input type="color" value="${correctionColorConfig[type].color}" data-type="${type}" data-checkbox-interactive />
                   </label>
                   <button type="button" class="reset-button" data-type="${type}" data-checkbox-interactive>Reset</button>
@@ -201,8 +202,13 @@ async function initOptions() {
     app.innerHTML = `
       <div class="options-container">
         <header>
-          <h1>Proofly Settings</h1>
-          <p>Configure your AI proofreading preferences</p>
+          <div class="header-content">
+            <prfly-logo size="48"></prfly-logo>
+            <div class="header-text">
+              <h1>Proofly Settings</h1>
+              <p>Configure your AI proofreading preferences</p>
+            </div>
+          </div>
         </header>
         <main>
           <section class="settings-section full-width">
