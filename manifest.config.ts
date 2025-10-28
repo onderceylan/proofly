@@ -3,8 +3,10 @@ import pkg from './package.json'
 
 export default defineManifest({
   manifest_version: 3,
-  name: pkg.name,
+  name: pkg.displayName,
+  short_name: pkg.name,
   version: pkg.version,
+  description: pkg.description,
   offline_enabled: true,
   minimum_chrome_version: '141',
   key: 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAghEbt/+ZI7NKopGGQC4PewsWckFdNInsNhQkhwsOR/Grpsi99fqTiT2A36FrK3vOE+81wQ85earudkXmrsOpBk3HkhtnjeyRxXymv3u4Vs65eqrGWaKqv3AN60zQ/Of1gXbkoIkoNh2+UcP5EI3eXyDN75QQvual1Q+Gui85Q60U1wKLMUl6kTA7nYjZeE5hGoM4sQJz8r26V9moMneJkX3tadIkG0oO/MgzZdb8a/IlAjAlkSxNFim6W0zb1HtOZLDzCdCYrF53v67C4HxrUn+BwXe+pNqsPl0gc05I/qr724p3cJNFrDKbebbpjI+kEIfw4cxirBqWCIG/RD3R4wIDAQAB',
@@ -15,7 +17,6 @@ export default defineManifest({
     default_icon: {
       48: 'public/logo-square.png',
     },
-    default_popup: 'src/popup/index.html',
   },
   background: {
     service_worker: 'src/background/main.ts',
@@ -27,6 +28,7 @@ export default defineManifest({
   }],
   permissions: [
     'sidePanel',
+    'tabs',
     'contentSettings',
     'storage',
     'contextMenus',
