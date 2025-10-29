@@ -104,6 +104,8 @@ const devLogSink = (logEvent: any) => {
   }
 }
 
+const isDevelopment = import.meta.env.MODE === 'development';
+
 export const p = pino({
   browser: {
     asObject: true,
@@ -124,14 +126,16 @@ export const p = pino({
         return object
       },
     },
-    transmit: {
-      level: 'info',
-      send: function (_level, logEvent) {
-        devLogSink(logEvent)
+    ...(isDevelopment && {
+      transmit: {
+        level: 'info',
+        send: function (_level, logEvent) {
+          devLogSink(logEvent)
+        },
       },
-    },
+    }),
   },
-  level: import.meta.env.MODE == 'development' ? 'debug' : 'warn',
+  level: isDevelopment ? 'debug' : 'error',
   timestamp: pino.stdTimeFunctions.isoTime,
 })
 
