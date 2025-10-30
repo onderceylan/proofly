@@ -12,7 +12,7 @@ import type {
   ProoflyMessage,
 } from '../shared/messages/issues.ts';
 import { ProoflyIssuesPanel } from './components/issues-panel.ts';
-import { ensureProofreaderModelReady } from "../services/model-checker.ts";
+import { ensureProofreaderModelReady } from '../services/model-checker.ts';
 
 type ApplyIssueDetail = { elementId: string; issueId: string };
 

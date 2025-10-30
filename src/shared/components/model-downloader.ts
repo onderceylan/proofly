@@ -109,7 +109,9 @@ export class ModelDownloaderComponent extends HTMLElement {
         return;
       }
 
-      this.showError(`${(error as Error).message} Check requirements and make sure to enable the flags then retry.`);
+      this.showError(
+        `${(error as Error).message} Check requirements and make sure to enable the flags then retry.`
+      );
       this.elements.button.disabled = false;
     }
   }

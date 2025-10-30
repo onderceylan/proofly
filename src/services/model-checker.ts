@@ -4,7 +4,11 @@ import { setStorageValues } from '../shared/utils/storage.ts';
 
 type ModelAvailability = 'unavailable' | 'downloadable' | 'downloading' | 'available';
 
-async function updateStorage(availability: ModelAvailability, isReady: boolean, isDownloaded: boolean): Promise<void> {
+async function updateStorage(
+  availability: ModelAvailability,
+  isReady: boolean,
+  isDownloaded: boolean
+): Promise<void> {
   await setStorageValues({
     [STORAGE_KEYS.MODEL_AVAILABILITY]: availability,
     [STORAGE_KEYS.PROOFREADER_READY]: isReady,
@@ -12,7 +16,9 @@ async function updateStorage(availability: ModelAvailability, isReady: boolean, 
   });
 }
 
-export async function ensureProofreaderModelReady(expectedInputLanguages: string[] = ['en']): Promise<boolean> {
+export async function ensureProofreaderModelReady(
+  expectedInputLanguages: string[] = ['en']
+): Promise<boolean> {
   if (!('Proofreader' in window)) {
     logger.warn('Proofreader API unavailable while checking model readiness');
     await updateStorage('unavailable', false, false);
