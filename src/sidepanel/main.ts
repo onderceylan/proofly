@@ -12,6 +12,7 @@ import type {
   ProoflyMessage,
 } from '../shared/messages/issues.ts';
 import { ProoflyIssuesPanel } from './components/issues-panel.ts';
+import { ensureProofreaderModelReady } from "../services/model-checker.ts";
 
 type ApplyIssueDetail = { elementId: string; issueId: string };
 
@@ -45,7 +46,9 @@ async function initSidepanel(): Promise<void> {
 
   document.body.classList.add('prfly-page');
 
-  const modelReady = await ensureModelReady();
+  await ensureProofreaderModelReady();
+
+  const modelReady = await isModelReady();
   if (!modelReady) {
     renderModelDownloader();
     return;
@@ -54,17 +57,6 @@ async function initSidepanel(): Promise<void> {
   mountIssuesPanel();
   registerRuntimeListeners();
   await refreshActiveTab();
-}
-
-async function ensureModelReady(): Promise<boolean> {
-  try {
-    const ready = await isModelReady();
-    logger.info({ ready }, 'Model readiness determined in sidepanel');
-    return ready;
-  } catch (error) {
-    logger.error({ error }, 'Failed to read model readiness state');
-    return false;
-  }
 }
 
 function renderModelDownloader(): void {

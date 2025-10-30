@@ -94,9 +94,9 @@ function registerBadgeListeners(): void {
 registerBadgeListeners();
 void updateActionBadge();
 
-chrome.runtime.onInstalled.addListener(async () => {
+chrome.runtime.onInstalled.addListener(async (details) => {
   await initializeStorage();
-  logger.info('Proofly extension installed and storage initialized');
+  logger.info({ reason: details?.reason }, 'Proofly extension installed and storage initialized');
 
   chrome.contextMenus.create({
     id: 'proofly-check',
@@ -106,6 +106,15 @@ chrome.runtime.onInstalled.addListener(async () => {
 
   registerBadgeListeners();
   await updateActionBadge();
+
+  if (details?.reason === 'install') {
+    try {
+      await chrome.runtime.openOptionsPage();
+      logger.info('Options page opened after install');
+    } catch (error) {
+      logger.error({ error }, 'Failed to open options page after install');
+    }
+  }
 });
 
 chrome.runtime.onStartup.addListener(async () => {

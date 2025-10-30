@@ -1,6 +1,7 @@
 import { logger } from '../services/logger.ts';
 import { ProofreadingManager } from './proofreading-manager.ts';
 import { isModelReady } from '../shared/utils/storage.ts';
+import { ensureProofreaderModelReady } from '../services/model-checker.ts';
 
 let manager: ProofreadingManager | null = null;
 
@@ -8,6 +9,8 @@ async function initProofreading() {
   logger.info('Content script loaded');
 
   try {
+    await ensureProofreaderModelReady();
+
     const modelReady = await isModelReady();
     logger.info({ modelReady }, 'Model ready check:');
 

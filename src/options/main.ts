@@ -32,6 +32,7 @@ import type {
 import { isMacOS } from '../shared/utils/platform.ts';
 import './style.css';
 import { logger } from '../services/logger.ts';
+import { ensureProofreaderModelReady } from '../services/model-checker.ts';
 
 const LIVE_TEST_SAMPLE_TEXT = `This are a radnom text with a few classic common, and typicla typso and grammar issus. the Proofreader API hopefuly finds them all, lets see. Getting in the bus yea.`;
 
@@ -48,13 +49,21 @@ interface LiveTestAreaOptions {
 async function initOptions() {
   const app = document.querySelector<HTMLDivElement>('#app')!;
 
+  await ensureProofreaderModelReady();
+
   const modelReady = await isModelReady();
 
   if (!modelReady) {
     app.innerHTML = `
       <div class="options-container">
         <header>
-          <h1>Proofly Settings</h1>
+          <div class="header-content">
+            <prfly-logo size="48"></prfly-logo>
+            <div class="header-text">
+              <h1>Proofly</h1>
+              <p>Private, on-device AI grammar and proofreading for Chrome</p>
+            </div>
+          </div>
         </header>
         <main>
           <proofly-model-downloader></proofly-model-downloader>

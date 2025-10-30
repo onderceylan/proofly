@@ -40,8 +40,8 @@ export class ModelDownloaderComponent extends HTMLElement {
     try {
       if (!('Proofreader' in window)) {
         this.showError(
-          'Proofreader API not found. This feature requires Chrome 128+ with the AI Proofreader API enabled. ' +
-            'Please check chrome://flags/#optimization-guide-on-device-model and enable "Enables optimization guide on device"'
+          'Proofreader API not found. This feature requires Chrome 141+ with the AI Proofreader API enabled. ' +
+            'Please enable "Proofreader API for Gemini Nano" on chrome://flags/#proofreader-api-for-gemini-nano.'
         );
         return;
       }
@@ -53,10 +53,10 @@ export class ModelDownloaderComponent extends HTMLElement {
       if (proofreaderAvailability === 'unavailable') {
         this.showError(
           'Proofreader API is unavailable on this device. Requirements:\n' +
-            '• Chrome 128 or later\n' +
+            '• Chrome 141 or later\n' +
             '• At least 22 GB free storage\n' +
             '• GPU with 4GB+ VRAM\n' +
-            '• Enable chrome://flags/#optimization-guide-on-device-model'
+            '• Enable chrome://flags/#proofreader-api-for-gemini-nano'
         );
         return;
       }
@@ -73,7 +73,7 @@ export class ModelDownloaderComponent extends HTMLElement {
 
       this.showDownloadButton();
     } catch (error) {
-      this.showError((error as Error).message);
+      this.showError(`${(error as Error).message}`);
     }
   }
 
@@ -109,7 +109,7 @@ export class ModelDownloaderComponent extends HTMLElement {
         return;
       }
 
-      this.showError((error as Error).message);
+      this.showError(`${(error as Error).message} Check requirements and make sure to enable the flags then retry.`);
       this.elements.button.disabled = false;
     }
   }
@@ -154,7 +154,7 @@ export class ModelDownloaderComponent extends HTMLElement {
     if (!this.elements.container || !this.elements.button) return;
 
     this.elements.container.classList.remove('hidden');
-    this.elements.button.style.display = 'block';
+    this.elements.button.style.display = 'inline-block';
     this.hideProgress();
     this.hideSuccess();
   }
@@ -365,23 +365,23 @@ export class ModelDownloaderComponent extends HTMLElement {
 
     const title = document.createElement('h2');
     title.className = 'title';
-    title.textContent = 'Proofly Setup';
+    title.textContent = 'Welcome to Proofly!';
 
     const description = document.createElement('p');
     description.className = 'description';
-    description.textContent =
-      'Download the AI models to enable on-device proofreading with language detection. This is a one-time setup.';
+    description.innerHTML =
+      'Download the AI models to get started with on-device proofreading with language detection. <br>This is a one-time setup.';
 
     const requirements = document.createElement('div');
     requirements.className = 'requirements';
     requirements.innerHTML = `
-      <strong>Requirements:</strong>
+      <strong>Requirements</strong>
       <ul>
-        <li>Chrome 128 or later</li>
-        <li>Enable chrome://flags/#optimization-guide-on-device-model</li>
+        <li>Chrome 141 or later</li>
+        <li>Enable chrome://flags/#proofreader-api-for-gemini-nano</li>
         <li>At least 22 GB free storage</li>
         <li>GPU with 4GB+ VRAM</li>
-        <li>Unmetered network connection</li>
+        <li>Unmetered network connection for one-off model download</li>
       </ul>
     `;
 
