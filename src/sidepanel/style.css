@@ -3,7 +3,7 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: var(--color-surface-subtle);
+  background: var(--color-surface-muted);
   color: var(--color-text-primary);
 }
 

@@ -380,7 +380,7 @@ export class ProoflyIssuesPanel extends HTMLElement {
         text-align: center;
         padding: var(--spacing-lg);
         color: var(--color-text-tertiary);
-        background: var(--color-surface-subtle);
+        background: var(--color-surface);
         border-radius: var(--radius-md);
         border: 1px dashed var(--color-border);
       }
