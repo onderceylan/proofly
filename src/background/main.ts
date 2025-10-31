@@ -35,6 +35,9 @@ async function updateBadgeForIssues(
     await chrome.action.setBadgeText({ text, tabId });
     return;
   }
+
+  await chrome.action.setBadgeText({ text: '', tabId });
+  currentBadgeState = 'clear';
 }
 
 function handleIssuesUpdate(
