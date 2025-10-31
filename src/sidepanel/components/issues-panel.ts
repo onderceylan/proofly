@@ -36,6 +36,18 @@ export class ProoflyIssuesPanel extends HTMLElement {
 
   private handleClick(event: Event): void {
     const target = event.target as HTMLElement;
+
+    if (target.closest('.settings-btn')) {
+      event.preventDefault();
+      this.dispatchEvent(
+        new CustomEvent('open-settings', {
+          bubbles: true,
+          composed: true,
+        })
+      );
+      return;
+    }
+
     const card = target.closest('.issue');
     if (!card) {
       return;
@@ -77,7 +89,12 @@ export class ProoflyIssuesPanel extends HTMLElement {
             <prfly-logo size="32"></prfly-logo>
             <h1>${this.escapeHtml(PANEL_HEADING)}</h1>
           </div>
-          ${this.renderIssueSummary(totalIssues)}
+          <div class="panel__header-right">
+            ${this.renderIssueSummary(totalIssues)}
+            <button type="button" class="settings-btn" title="Open settings" aria-label="Open settings">
+              <img src="${chrome.runtime.getURL('src/assets/settings.svg')}" alt="" />
+            </button>
+          </div>
         </header>
         <section class="panel__content">
           ${totalIssues > 0 ? this.renderIssueGroups(groups) : this.renderEmptyState()}
@@ -87,10 +104,6 @@ export class ProoflyIssuesPanel extends HTMLElement {
   }
 
   private renderIssueSummary(totalIssues: number): string {
-    if (totalIssues === 0) {
-      return '';
-    }
-
     return `<span class="issue__badge issue__count">${totalIssues}</span>`;
   }
 
@@ -195,6 +208,12 @@ export class ProoflyIssuesPanel extends HTMLElement {
         gap: var(--spacing-sm);
       }
 
+      .panel__header-right {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+      }
+
       .panel__header h1 {
         margin: 0;
         font-size: var(--font-size-lg);
@@ -205,6 +224,33 @@ export class ProoflyIssuesPanel extends HTMLElement {
         font-size: var(--font-size-sm);
         color: var(--color-primary);
         font-weight: var(--font-weight-medium);
+      }
+
+      .settings-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: var(--radius-xl);
+        border: 1px solid var(--color-border);
+        background: var(--color-surface-subtle);
+        color: var(--color-text-secondary);
+        width: 2rem;
+        height: 2rem;
+        cursor: pointer;
+        transition: background var(--transition-base), color var(--transition-base), border-color var(--transition-base), box-shadow var(--transition-base);;
+        padding: 0;
+      }
+
+      .settings-btn:hover,
+      .settings-btn:focus-visible {
+        border-color: var(--color-primary);
+        box-shadow: 0 0 0 3px var(--color-primary-ring);
+      }
+
+      .settings-btn img {
+        width: 1.1rem;
+        height: 1.1rem;
+        display: block;
       }
 
       .panel__status--idle {

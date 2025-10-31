@@ -82,6 +82,7 @@ function mountIssuesPanel(): void {
 
   panelElement = document.createElement('prfly-issues-panel') as ProoflyIssuesPanel;
   panelElement.addEventListener('apply-issue', onApplyIssue);
+  panelElement.addEventListener('open-settings', onOpenSettings);
 
   const section = document.createElement('div');
   section.className = 'prfly-section prfly-section--muted';
@@ -204,6 +205,12 @@ async function requestIssuesState(tabId: number): Promise<void> {
 
 function onApplyIssue(event: Event): void {
   void handleApplyIssue(event as CustomEvent<ApplyIssueDetail>);
+}
+
+function onOpenSettings(): void {
+  void chrome.runtime.openOptionsPage().catch((error) => {
+    logger.error({ error }, 'Failed to open settings from sidepanel');
+  });
 }
 
 async function handleApplyIssue(event: CustomEvent<ApplyIssueDetail>): Promise<void> {
