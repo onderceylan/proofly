@@ -93,8 +93,8 @@ export class ProoflyIssuesPanel extends HTMLElement {
   private render(): void {
     const groups = this.state?.elements ?? [];
     const totalIssues = groups.reduce((count, group) => count + group.issues.length, 0);
-    const settingsIconUrl = chrome.runtime.getURL('src/assets/settings.svg');
-    const fixAllIconUrl = chrome.runtime.getURL('src/assets/check-circle.svg');
+    const settingsIconUrl = chrome.runtime.getURL('settings.svg');
+    const fixAllIconUrl = chrome.runtime.getURL('check-circle.svg');
 
     this.shadow.innerHTML = `
       <style>
