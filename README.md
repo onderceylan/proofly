@@ -11,9 +11,9 @@
 
 **Your privacy-first writing assistant powered by Chrome on-device AI**
 
-[Features](#-features) •
-[Why Proofly](#-why-proofly) •
-[Installation](#-installation) •
+[Features](#features) •
+[Why Proofly](#why-proofly) •
+[Installation](#installation) •
 [Contributing](Agents.md) •
 [Privacy](PRIVACY.md)
 
