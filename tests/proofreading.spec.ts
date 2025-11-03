@@ -185,6 +185,73 @@ describe('Proofly proofreading', () => {
     }
   });
 
+  test('should apply autofix on double-click when enabled', async () => {
+    await ensureAutoFixOnDoubleClick(page, true);
+
+    await page.goto('http://localhost:8080/test.html', { waitUntil: 'networkidle0' });
+
+    await page.waitForSelector('#test-input', { timeout: 10000 });
+    await page.focus('#test-input');
+
+    const originalValue = await page.$eval(
+      '#test-input',
+      (element) => (element as HTMLInputElement).value
+    );
+
+    await page.evaluate(() => {
+      const element = document.getElementById('test-input') as HTMLInputElement;
+      if (element) {
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    });
+
+    await page.waitForSelector('proofly-highlighter', { timeout: 10000 });
+
+    const highlights = await collectHighlightDetails(page, 'test-input');
+    expect(highlights.length).toBeGreaterThan(0);
+
+    const targetHighlight = selectHighlightByWord(highlights, 'typicla');
+    expect(targetHighlight).not.toBeNull();
+    if (!targetHighlight) {
+      return;
+    }
+
+    await clickHighlightDetail(page, targetHighlight, { doubleClick: true });
+
+    await page.waitForFunction(
+      (original, fieldId) => {
+        const input = document.getElementById(fieldId) as HTMLInputElement | null;
+        if (!input) {
+          return false;
+        }
+        return input.value !== original;
+      },
+      { timeout: 10000 },
+      originalValue,
+      'test-input'
+    );
+
+    await page.waitForFunction(
+      (issueId) => {
+        const host = document.querySelector('proofly-highlighter');
+        if (!host?.shadowRoot) {
+          return true;
+        }
+        return !host.shadowRoot.querySelector(`.u[data-issue-id="${issueId}"]`);
+      },
+      { timeout: 10000 },
+      targetHighlight.issueId
+    );
+
+    const finalValue = await page.$eval(
+      '#test-input',
+      (element) => (element as HTMLInputElement).value
+    );
+
+    expect(finalValue).not.toEqual(originalValue);
+    expect(finalValue).not.toContain(targetHighlight.originalText.trim());
+  });
+
   test('should inject highlights on textarea field', async () => {
     console.log('Focusing textarea field and triggering input event');
     await page.waitForSelector('#test-textarea', { timeout: 10000 });

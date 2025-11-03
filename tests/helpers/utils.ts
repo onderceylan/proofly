@@ -11,7 +11,10 @@ export interface HighlightDetail {
 
 const HOST_MATCH_TOLERANCE = 5;
 
-export async function collectHighlightDetails(page: Page, fieldId: string): Promise<HighlightDetail[]> {
+export async function collectHighlightDetails(
+  page: Page,
+  fieldId: string
+): Promise<HighlightDetail[]> {
   const handle = await page.waitForFunction(
     (id, tolerance) => {
       const field = document.getElementById(id);
@@ -41,7 +44,7 @@ export async function collectHighlightDetails(page: Page, fieldId: string): Prom
       const value =
         field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement
           ? field.value
-          : field.textContent ?? '';
+          : (field.textContent ?? '');
 
       return highlightNodes.map((node) => {
         const issueId = node.getAttribute('data-issue-id') ?? '';
@@ -82,7 +85,9 @@ export function selectHighlightByWord(
 
   if (target) {
     const normalized = target.trim().toLowerCase();
-    const match = highlights.find((detail) => detail.originalText.trim().toLowerCase() === normalized);
+    const match = highlights.find(
+      (detail) => detail.originalText.trim().toLowerCase() === normalized
+    );
     if (match) {
       return match;
     }
@@ -100,13 +105,18 @@ export function selectHighlightByWord(
 
 export async function clickHighlightDetail(
   page: Page,
-  highlight: HighlightDetail
+  highlight: HighlightDetail,
+  options: { doubleClick?: boolean } = {}
 ): Promise<void> {
   await page.mouse.move(highlight.centerX, highlight.centerY);
-  await page.mouse.click(highlight.centerX, highlight.centerY, { delay: 20 });
+  if (options.doubleClick) {
+    await page.mouse.click(highlight.centerX, highlight.centerY, { delay: 20, clickCount: 2 });
+  } else {
+    await page.mouse.click(highlight.centerX, highlight.centerY, { delay: 20 });
+  }
 
   await page.evaluate(
-    ({ issueId, clientX, clientY }) => {
+    ({ issueId, clientX, clientY, doubleClick }) => {
       const hosts = Array.from(document.querySelectorAll('proofly-highlighter'));
       for (const host of hosts) {
         const highlightNode = host.shadowRoot?.querySelector(
@@ -114,7 +124,7 @@ export async function clickHighlightDetail(
         ) as HTMLElement | null;
         if (highlightNode) {
           highlightNode.dispatchEvent(
-            new MouseEvent('click', {
+            new MouseEvent(doubleClick ? 'dblclick' : 'click', {
               bubbles: true,
               composed: true,
               cancelable: true,
@@ -130,6 +140,7 @@ export async function clickHighlightDetail(
       issueId: highlight.issueId,
       clientX: highlight.centerX,
       clientY: highlight.centerY,
+      doubleClick: Boolean(options.doubleClick),
     }
   );
 }
