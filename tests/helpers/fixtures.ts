@@ -12,6 +12,21 @@ export async function getPage(): Promise<Page> {
   return pages.length > 0 ? pages[0] : await browser.newPage();
 }
 
+export async function ensureAutoFixOnDoubleClick(
+  page: Page,
+  autofixOnDoubleClick: boolean
+): Promise<void> {
+  const extensionId = getExtensionId();
+
+  await page.goto(`chrome-extension://${extensionId}/src/options/index.html`, {
+    waitUntil: 'networkidle0',
+  });
+
+  await page.evaluate(async (value) => {
+    await chrome.storage.sync.set({ autofixOnDoubleClick: value });
+  }, autofixOnDoubleClick);
+}
+
 export async function ensureModelReady(page: Page): Promise<void> {
   console.log('Warming up model by visiting options page...');
   await page.goto(`chrome-extension://${EXTENSION_ID}/src/options/index.html`, {
@@ -39,4 +54,14 @@ export async function ensureModelReady(page: Page): Promise<void> {
   if (!modelReady) {
     throw new Error('Model did not become ready after maximum retries');
   }
+}
+
+export async function resetExtensionStorage(page: Page): Promise<void> {
+  await page.goto(`chrome-extension://${EXTENSION_ID}/src/options/index.html`, {
+    waitUntil: 'networkidle0',
+  });
+
+  await page.evaluate(async () => {
+    await Promise.all([chrome.storage.local.clear(), chrome.storage.sync.clear()]);
+  });
 }

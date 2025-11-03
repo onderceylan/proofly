@@ -156,7 +156,7 @@ export class CorrectionPopover extends HTMLElement {
       </div>
       <div class="correction-body">
         <div class="correction-suggestion">
-          <strong>Suggestion:</strong> ${suggestionDisplay}
+          <strong>Suggestion:</strong> <span id="suggestion">${suggestionDisplay}</span>
         </div>
         ${
           this.currentCorrection.explanation

@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { fileURLToPath } from 'url';
 import { spawn } from 'node:child_process';
 import { beforeAll, afterAll } from 'vitest';
+import {resetExtensionStorage} from "./fixtures";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -126,6 +127,11 @@ beforeAll(async () => {
   }
 
   if (globalBrowser) {
+    const page= await globalBrowser.newPage();
+    await page.goto(`chrome-extension://${EXTENSION_ID}/src/options/index.html`, {
+      waitUntil: 'networkidle0',
+    });
+    await resetExtensionStorage(page);
     await reloadExtension(globalBrowser);
   }
 });
