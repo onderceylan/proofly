@@ -10,6 +10,14 @@ export interface HighlightDetail {
 }
 
 const HOST_MATCH_TOLERANCE = 5;
+const ERROR_TYPES = [
+  'spelling',
+  'grammar',
+  'punctuation',
+  'capitalization',
+  'preposition',
+  'missing-words',
+];
 
 export async function collectHighlightDetails(
   page: Page,
@@ -171,13 +179,73 @@ export async function waitForHighlightCount(
   throw new Error(`Highlight count did not satisfy predicate for ${fieldId}`);
 }
 
+export async function countContentEditableHighlights(page: Page, fieldId: string): Promise<number> {
+  return page.evaluate(
+    (id, errorTypes) => {
+      const element = document.getElementById(id);
+      if (!element) {
+        throw new Error('Could not find element');
+      }
+      if (!('highlights' in CSS)) {
+        throw new Error('CSS highlights is not supported');
+      }
+
+      let total = 0;
+
+      for (const type of errorTypes as string[]) {
+        const highlight = CSS.highlights.get(type);
+        if (!highlight) continue;
+        for (const range of highlight as any) {
+          const container = range.commonAncestorContainer as Node | null;
+          if (!container) {
+            continue;
+          }
+          const elementContainer =
+            container.nodeType === Node.ELEMENT_NODE
+              ? (container as Element)
+              : (container.parentElement as Element | null);
+
+          if (elementContainer && element.contains(elementContainer)) {
+            total += 1;
+          }
+        }
+      }
+
+      return total;
+    },
+    fieldId,
+    ERROR_TYPES
+  );
+}
+
+export async function waitForContentEditableHighlightCount(
+  page: Page,
+  fieldId: string,
+  predicate: (count: number) => boolean,
+  options: HighlightWaitOptions = {}
+): Promise<number> {
+  const timeout = options.timeout ?? 10000;
+  const interval = options.interval ?? 200;
+  const deadline = Date.now() + timeout;
+
+  while (Date.now() < deadline) {
+    const count = await countContentEditableHighlights(page, fieldId);
+    if (predicate(count)) {
+      return count;
+    }
+    await new Promise((resolve) => setTimeout(resolve, interval));
+  }
+
+  throw new Error(`Contenteditable highlight count did not satisfy predicate for ${fieldId}`);
+}
+
 export async function hasMirrorOverlay(page: Page): Promise<boolean> {
   return page.evaluate(() => {
     const highlighter = document.querySelector('proofly-highlighter');
     if (!highlighter?.shadowRoot) return false;
 
     const mirror = highlighter.shadowRoot.querySelector('#mirror');
-    return !!mirror;
+    return Boolean(mirror);
   });
 }
 

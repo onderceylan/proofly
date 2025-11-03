@@ -11,6 +11,8 @@ import {
   selectHighlightByWord,
   clickHighlightDetail,
   waitForHighlightCount,
+  countContentEditableHighlights,
+  waitForContentEditableHighlightCount,
   waitForPopoverOpen,
   waitForPopoverClosed,
   hasMirrorOverlay,
@@ -197,6 +199,24 @@ describe('Proofly proofreading', () => {
     }
   });
 
+  test('should detect highlights after resetting input field', async () => {
+    await page.waitForSelector('#test-input', { timeout: 10000 });
+
+    await page.evaluate(() => {
+      const element = document.getElementById('test-input') as HTMLInputElement | null;
+      if (!element) {
+        return;
+      }
+      element.value = 'Ths is bad txt';
+      element.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    await page.waitForSelector('proofly-highlighter', { timeout: 10000 });
+
+    const highlightCount = await waitForHighlightCount(page, 'test-input', (count) => count > 0);
+    expect(highlightCount).toBeGreaterThan(0);
+  });
+
   test('should apply autofix on double-click when enabled', async () => {
     await ensureAutoFixOnDoubleClick(page, true);
 
@@ -299,6 +319,24 @@ describe('Proofly proofreading', () => {
     expect(updatedCount).toBeGreaterThan(initialCount);
   });
 
+  test('should detect highlights after resetting textarea field', async () => {
+    await page.waitForSelector('#test-textarea', { timeout: 10000 });
+
+    await page.evaluate(() => {
+      const element = document.getElementById('test-textarea') as HTMLTextAreaElement | null;
+      if (!element) {
+        return;
+      }
+      element.value = 'Wrong sentences are heree';
+      element.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    await page.waitForSelector('proofly-highlighter', { timeout: 10000 });
+
+    const highlightCount = await waitForHighlightCount(page, 'test-textarea', (count) => count > 0);
+    expect(highlightCount).toBeGreaterThan(0);
+  });
+
   test('should inject highlights on contenteditable input', async () => {
     console.log('Focusing contenteditable div and triggering input event');
     await page.waitForSelector('#test-contenteditable-div', { timeout: 10000 });
@@ -335,27 +373,7 @@ describe('Proofly proofreading', () => {
     );
 
     console.log('Counting highlights');
-    const countHighlights = () =>
-      page.evaluate(() => {
-        let totalRanges = 0;
-        const errorTypes = [
-          'spelling',
-          'grammar',
-          'punctuation',
-          'capitalization',
-          'preposition',
-          'missing-words',
-        ];
-        for (const errorType of errorTypes) {
-          const highlight = CSS.highlights.get(errorType);
-          if (highlight) {
-            totalRanges += highlight.size;
-          }
-        }
-        return totalRanges;
-      });
-
-    let highlightCount = await countHighlights();
+    let highlightCount = await countContentEditableHighlights(page, 'test-contenteditable-div');
 
     console.log(`Found ${highlightCount} highlights`);
     expect(highlightCount).toBeGreaterThan(0);
@@ -372,30 +390,32 @@ describe('Proofly proofreading', () => {
     });
     await page.type('#test-contenteditable-div', ' even more errror text');
 
-    await page.waitForFunction(
-      (previousCount) => {
-        let totalRanges = 0;
-        const errorTypes = [
-          'spelling',
-          'grammar',
-          'punctuation',
-          'capitalization',
-          'preposition',
-          'missing-words',
-        ];
-        for (const errorType of errorTypes) {
-          const highlight = CSS.highlights.get(errorType);
-          if (highlight) {
-            totalRanges += highlight.size;
-          }
-        }
-        return totalRanges > previousCount;
-      },
-      { timeout: 10000 },
-      highlightCount
+    const updatedHighlightCount = await waitForContentEditableHighlightCount(
+      page,
+      'test-contenteditable-div',
+      (count) => count > highlightCount
+    );
+    expect(updatedHighlightCount).toBeGreaterThan(highlightCount);
+  });
+
+  test('should detect highlights after resetting contenteditable field', async () => {
+    await page.waitForSelector('#test-contenteditable-div', { timeout: 10000 });
+
+    await page.evaluate(() => {
+      const element = document.getElementById('test-contenteditable-div');
+      if (!element) {
+        return;
+      }
+      element.textContent = 'Completly wrongg sentence';
+      element.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    const highlightCount = await waitForContentEditableHighlightCount(
+      page,
+      'test-contenteditable-div',
+      (count) => count > 0
     );
 
-    const updatedHighlightCount = await countHighlights();
-    expect(updatedHighlightCount).toBeGreaterThan(highlightCount);
+    expect(highlightCount).toBeGreaterThan(0);
   });
 });
