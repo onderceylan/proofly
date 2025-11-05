@@ -18,8 +18,40 @@ import {
   waitForPopoverOpen,
   waitForPopoverClosed,
   hasMirrorOverlay,
+  delay,
 } from './helpers/utils';
 import { Page } from 'puppeteer-core';
+
+const HOST_MATCH_TOLERANCE = 5;
+
+async function getImmediateHighlightCount(page: Page, fieldId: string): Promise<number> {
+  return page.evaluate(
+    (id, tolerance) => {
+      const field = document.getElementById(id);
+      if (!(field instanceof HTMLElement)) {
+        return 0;
+      }
+
+      const fieldRect = field.getBoundingClientRect();
+      const hosts = Array.from(document.querySelectorAll('proofly-highlighter'));
+      const hostForField = hosts.find((host) => {
+        const rect = host.getBoundingClientRect();
+        return (
+          Math.abs(rect.left - fieldRect.left) <= tolerance &&
+          Math.abs(rect.top - fieldRect.top) <= tolerance
+        );
+      });
+
+      if (!hostForField?.shadowRoot) {
+        return 0;
+      }
+
+      return hostForField.shadowRoot.querySelectorAll('.u').length;
+    },
+    fieldId,
+    HOST_MATCH_TOLERANCE
+  );
+}
 
 describe('Proofly options page', () => {
   test('should load as expected', async () => {
@@ -407,6 +439,41 @@ describe('Proofly proofreading', () => {
     );
 
     expect(updatedCount).toBeGreaterThan(initialCount);
+  });
+
+  test('should remove highlights when text is overwritten', async () => {
+    await page.goto('http://localhost:8080/test.html', { waitUntil: 'networkidle0' });
+
+    await page.waitForSelector('#test-textarea', { timeout: 10000 });
+    await page.focus('#test-textarea');
+
+    await page.evaluate(() => {
+      const element = document.getElementById('test-textarea') as HTMLTextAreaElement;
+      if (element) {
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    });
+
+    const initialCount = await waitForHighlightCount(page, 'test-textarea', (count) => count > 0);
+    expect(initialCount).toBeGreaterThan(0);
+
+    await page.click('#test-textarea');
+    await page.evaluate(() => {
+      const element = document.getElementById('test-textarea') as HTMLTextAreaElement | null;
+      element?.setSelectionRange(0, element.value.length);
+    });
+
+    await page.keyboard.press('Backspace');
+
+    await delay(200);
+
+    const clearedCount = await getImmediateHighlightCount(page, 'test-textarea');
+    expect(clearedCount).toBe(0);
+
+    await page.type('#test-textarea', 'This is a clean text with no issues.');
+
+    const finalCount = await getImmediateHighlightCount(page, 'test-textarea');
+    expect(finalCount).toBe(0);
   });
 
   test('should detect highlights after resetting textarea field', async () => {

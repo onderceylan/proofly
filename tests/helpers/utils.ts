@@ -297,3 +297,7 @@ export async function waitForPopoverClosed(page: Page, timeout = 5000): Promise<
     { timeout }
   );
 }
+
+export async function delay(millis: number) {
+  return new Promise((resolve) => setTimeout(resolve, millis));
+}

@@ -1,5 +1,6 @@
 import pino from 'pino';
 import { getExtensionContext } from './extension-context.ts';
+import { serializeMessage } from '../shared/utils/serialize.ts';
 
 // Generate session ID for development logging
 const generateSessionId = (): string => {
@@ -46,7 +47,10 @@ const flushLogsToStorage = async () => {
     let logs = result.__dev_logs || [];
 
     if (!sessionInitialized) {
-      logs = logs.filter((log: any) => log.sid === sessionId);
+      const currentContext = logsToFlush[0]?.ctx;
+      if (currentContext) {
+        logs = logs.filter((log: any) => !(log.ctx === currentContext && log.sid !== sessionId));
+      }
       sessionInitialized = true;
     }
 
@@ -93,7 +97,9 @@ const devLogSink = (logEvent: any) => {
       t: logEvent.ts,
       ctx: logEvent.bindings[0]?.context || 'unknown',
       level: logEvent.level.label,
-      msg: logEvent.messages,
+      msg: Array.isArray(logEvent.messages)
+        ? logEvent.messages.map((message: object) => serializeMessage(message))
+        : [],
       data: Object.keys(structuredData).length > 0 ? structuredData : undefined,
       sid: sessionId,
     };
