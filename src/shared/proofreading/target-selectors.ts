@@ -11,7 +11,7 @@ export const PROOFREAD_TARGET_SELECTORS = [
 const TEXT_INPUT_SELECTOR = TEXT_INPUT_SELECTORS.join(', ');
 const TARGET_SELECTOR = PROOFREAD_TARGET_SELECTORS.join(', ');
 
-export function shouldProofread(element: Element): element is HTMLElement {
+export function isProofreadTarget(element: Element): element is HTMLElement {
   if (!(element instanceof HTMLElement)) {
     return false;
   }
@@ -21,6 +21,27 @@ export function shouldProofread(element: Element): element is HTMLElement {
   }
 
   return element.isContentEditable;
+}
+
+export function isSpellcheckDisabled(element: Element): element is HTMLElement {
+  if (!(element instanceof HTMLElement)) {
+    return false;
+  }
+
+  const value = element.getAttribute('spellcheck');
+  return typeof value === 'string' && value.trim().toLowerCase() === 'false';
+}
+
+export function shouldProofread(element: Element): element is HTMLElement {
+  if (!isProofreadTarget(element)) {
+    return false;
+  }
+
+  if (isSpellcheckDisabled(element)) {
+    return false;
+  }
+
+  return true;
 }
 
 export function shouldMirrorOnElement(

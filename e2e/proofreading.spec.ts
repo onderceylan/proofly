@@ -20,6 +20,7 @@ import {
   hasMirrorOverlay,
   delay,
   getImmediateHighlightCount,
+  startProofreadControlCapture,
 } from './helpers/utils';
 import { Page } from 'puppeteer-core';
 
@@ -82,29 +83,7 @@ describe('Proofly proofreading', () => {
   test('should not trigger proofreading on email input field', async () => {
     await page.goto('http://localhost:8080/test.html', { waitUntil: 'networkidle0' });
 
-    await page.evaluate(() => {
-      const globalWindow = window as unknown as {
-        __prooflyControlEvents?: any[];
-        __prooflyControlEventsListener?: (event: Event) => void;
-      };
-
-      if (globalWindow.__prooflyControlEventsListener) {
-        window.removeEventListener(
-          'proofly:proofread-control',
-          globalWindow.__prooflyControlEventsListener
-        );
-      }
-
-      globalWindow.__prooflyControlEvents = [];
-
-      const listener = (event: Event) => {
-        const customEvent = event as CustomEvent;
-        globalWindow.__prooflyControlEvents?.push(customEvent.detail);
-      };
-
-      window.addEventListener('proofly:proofread-control', listener);
-      globalWindow.__prooflyControlEventsListener = listener;
-    });
+    await startProofreadControlCapture(page);
 
     await page.waitForSelector('#test-email', { timeout: 10000 });
     await page.focus('#test-email');
@@ -138,6 +117,50 @@ describe('Proofly proofreading', () => {
     );
 
     const highlightCount = await getImmediateHighlightCount(page, 'test-email');
+    expect(highlightCount).toBe(0);
+  });
+
+  test('should not trigger proofreading on spellcheck-disabled text input', async () => {
+    await page.goto('http://localhost:8080/test.html', { waitUntil: 'networkidle0' });
+
+    await startProofreadControlCapture(page);
+
+    await page.waitForSelector('#test-spellcheck-disabled', { timeout: 10000 });
+    await page.focus('#test-spellcheck-disabled');
+
+    await page.evaluate(() => {
+      const element = document.getElementById(
+        'test-spellcheck-disabled'
+      ) as HTMLInputElement | null;
+      if (!element) {
+        return;
+      }
+      element.value = 'Spellchk is off hre';
+      element.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    await page.waitForFunction(
+      () => {
+        const globalWindow = window as unknown as {
+          __prooflyControlEvents?: Array<Record<string, any>>;
+        };
+        const target = document.getElementById(
+          'test-spellcheck-disabled'
+        ) as HTMLInputElement | null;
+        const events = globalWindow.__prooflyControlEvents || [];
+        const length = target?.value.length ?? 0;
+        return events.some(
+          (event) =>
+            event?.status === 'ignored' &&
+            event?.reason === 'spellcheck-disabled' &&
+            event?.textLength === length &&
+            event?.elementKind === 'input'
+        );
+      },
+      { timeout: 10000 }
+    );
+
+    const highlightCount = await getImmediateHighlightCount(page, 'test-spellcheck-disabled');
     expect(highlightCount).toBe(0);
   });
 

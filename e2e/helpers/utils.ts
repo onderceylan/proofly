@@ -218,6 +218,32 @@ export async function countContentEditableHighlights(page: Page, fieldId: string
   );
 }
 
+export async function startProofreadControlCapture(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const globalWindow = window as unknown as {
+      __prooflyControlEvents?: any[];
+      __prooflyControlEventsListener?: (event: Event) => void;
+    };
+
+    if (globalWindow.__prooflyControlEventsListener) {
+      window.removeEventListener(
+        'proofly:proofread-control',
+        globalWindow.__prooflyControlEventsListener
+      );
+    }
+
+    globalWindow.__prooflyControlEvents = [];
+
+    const listener = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      globalWindow.__prooflyControlEvents?.push(customEvent.detail);
+    };
+
+    window.addEventListener('proofly:proofread-control', listener);
+    globalWindow.__prooflyControlEventsListener = listener;
+  });
+}
+
 export async function waitForContentEditableHighlightCount(
   page: Page,
   fieldId: string,

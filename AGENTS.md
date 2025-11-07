@@ -95,6 +95,11 @@ npm run format
 # 4. Test the changes
 ```
 
+### Iteration Testing Checklist
+
+- On every feature/fix iteration run `npm run typecheck` followed by `npm test` to catch regressions early.
+- When adding a brand-new e2e scenario, temporarily focus it with `test.only(...)`, run `npm run test:e2e`, and remove the focus flag before committing.
+
 ### Standard Testing Workflow for Content Scripts
 
 **FOR EVERY CODE CHANGE**, follow this complete verification workflow:
@@ -278,6 +283,10 @@ mcp__chrome - devtools__take_screenshot();
 - Leverage `evaluate_script` to simulate user interactions programmatically
 - Check both console output AND DOM state to verify behavior
 - Use `extension_get_logs` to access structured logs across all extension contexts
+
+### E2E Helpers
+
+- Always move reusable e2e utilities (helpers, capture logic, shared waits) into `e2e/helpers/utils.ts` so specs stay focused on scenarios.
 
 ### Code Style
 

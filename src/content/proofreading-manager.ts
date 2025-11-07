@@ -28,7 +28,12 @@ import {
   type ProofreadLifecycleInternalEvent,
   type ProofreadRunContext,
 } from '../shared/proofreading/controller.ts';
-import { shouldMirrorOnElement, shouldProofread } from '../shared/proofreading/target-selectors.ts';
+import {
+  isProofreadTarget,
+  isSpellcheckDisabled,
+  shouldMirrorOnElement,
+  shouldProofread,
+} from '../shared/proofreading/target-selectors.ts';
 import type { ProofreadingTargetHooks } from '../shared/proofreading/types.ts';
 import type { ProofreadCorrection, ProofreadResult, UnderlineStyle } from '../shared/types.ts';
 import {
@@ -159,7 +164,11 @@ export class ProofreadingManager {
         return;
       }
       if (!this.isEditableElement(target)) {
-        this.reportIgnoredElement(target, 'unsupported-target');
+        const reason: ProofreadLifecycleReason =
+          isSpellcheckDisabled(target) && isProofreadTarget(target)
+            ? 'spellcheck-disabled'
+            : 'unsupported-target';
+        this.reportIgnoredElement(target, reason);
         return;
       }
       this.registerElement(target);

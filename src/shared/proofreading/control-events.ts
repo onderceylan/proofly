@@ -12,6 +12,7 @@ export type ProofreadLifecycleStatus =
 
 export type ProofreadLifecycleReason =
   | 'unsupported-target'
+  | 'spellcheck-disabled'
   | 'empty-text'
   | 'unchanged-text'
   | 'restored-from-history'

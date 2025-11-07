@@ -224,12 +224,24 @@
       <h2>4. Email Input (ignored)</h2>
       <label for="test-email" class="visually-hidden">Email Input</label>
       <input
-              id="test-email"
-              type="email"
-              inputmode="email"
-              autocomplete="email"
-              placeholder="Type an email with mistakes..."
-              value="prooffly-user@exampl,com"
+        id="test-email"
+        type="email"
+        inputmode="email"
+        autocomplete="email"
+        placeholder="Type an email with mistakes..."
+        value="prooffly-user@exampl,com"
+      />
+    </div>
+
+    <div class="section">
+      <h2>5. Spellcheck Disabled Input (ignored)</h2>
+      <label for="test-spellcheck-disabled" class="visually-hidden">Spellcheck Disabled Input</label>
+      <input
+        id="test-spellcheck-disabled"
+        type="text"
+        spellcheck="false"
+        placeholder="Spellcheck is disabled here..."
+        value="This field shoud not be proofred"
       />
     </div>
 
