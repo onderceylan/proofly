@@ -1,8 +1,13 @@
 @import url('../shared/styles/ui.css');
 
+html {
+  height: 100%;
+  overscroll-behavior-y: none;
+}
+
 body {
   margin: 0;
-  min-height: 100vh;
+  height: 100%;
   background: var(--color-surface-muted);
   color: var(--color-text-primary);
 }
@@ -12,18 +17,21 @@ body {
   animation: rotation 5s linear infinite;
 }
 
-.prfly-panel-busy::before {
+.prfly-panel-busy #app::before {
   content: '';
   position: absolute;
   inset: 0.3rem;
   filter: blur(0.25rem);
   background-color: var(--color-surface-subtle);
+  height: 100%;
+  z-index: -1;
 }
 
 #app {
   display: grid;
   z-index: 1;
   position: relative;
+  min-height: calc(100% - 10px);
 }
 
 @property --gradient-angle {

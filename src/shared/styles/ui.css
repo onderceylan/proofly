@@ -10,13 +10,13 @@
 
 body {
   margin: 0;
-  min-height: 100vh;
+  min-height: 100%;
   background: inherit;
   color: inherit;
 }
 
 .prfly-page {
-  min-height: 100vh;
+  min-height: calc(100% - 10px);
   background: var(--color-surface-subtle);
   color: var(--color-text-primary);
 }
