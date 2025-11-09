@@ -13,12 +13,30 @@ export interface SidepanelIssue {
   explanation?: string;
 }
 
+export type IssueGroupErrorCode =
+  | 'unsupported-language'
+  | 'language-detection-unconfident'
+  | 'language-detection-error';
+
+export type IssueGroupErrorSeverity = 'error' | 'warning';
+
+export interface IssueGroupError {
+  code: IssueGroupErrorCode;
+  severity: IssueGroupErrorSeverity;
+  message: string;
+  details?: {
+    language?: string;
+    supportedLanguages?: string[];
+  };
+}
+
 export interface IssueElementGroup {
   elementId: string;
   domId: string | null;
   kind: IssueElementKind;
   label: string | null;
   issues: SidepanelIssue[];
+  errors?: IssueGroupError[] | null;
 }
 
 export interface IssuesUpdatePayload {

@@ -4,6 +4,7 @@ import type {
   IssuesUpdatePayload,
   IssueElementGroup,
   IssueElementKind,
+  IssueGroupError,
   SidepanelIssue,
 } from '../../shared/messages/issues.ts';
 
@@ -93,6 +94,9 @@ export class ProoflyIssuesPanel extends HTMLElement {
   private render(): void {
     const groups = this.state?.elements ?? [];
     const totalIssues = groups.reduce((count, group) => count + group.issues.length, 0);
+    const hasGroups = groups.some(
+      (group) => group.issues.length > 0 || (group.errors && group.errors.length > 0)
+    );
     const settingsIconUrl = chrome.runtime.getURL('settings.svg');
     const fixAllIconUrl = chrome.runtime.getURL('check-circle.svg');
 
@@ -123,7 +127,7 @@ export class ProoflyIssuesPanel extends HTMLElement {
           </div>
         </header>
         <section class="panel__content">
-          ${totalIssues > 0 ? this.renderIssueGroups(groups) : this.renderEmptyState()}
+          ${hasGroups ? this.renderIssueGroups(groups) : this.renderEmptyState()}
         </section>
       </div>
     `;
@@ -139,14 +143,34 @@ export class ProoflyIssuesPanel extends HTMLElement {
         const heading = describeGroupHeading(group);
         const header = heading ? `<h2 class="group__title">${this.escapeHtml(heading)}</h2>` : '';
         const cards = group.issues.map((issue) => this.renderIssueCard(group, issue)).join('');
+        const notices = group.errors ? this.renderGroupMessages(group.errors) : '';
+        const issuesContent =
+          group.issues.length > 0 ? `<div class="group__issues">${cards}</div>` : '';
         return `
           <article class="group" data-element-id="${group.elementId}">
             ${header}
-            <div class="group__issues">${cards}</div>
+            ${notices}
+            ${issuesContent}
           </article>
         `;
       })
       .join('');
+  }
+
+  private renderGroupMessages(errors: IssueGroupError[]): string {
+    return errors.map((error) => this.renderGroupMessage(error)).join('');
+  }
+
+  private renderGroupMessage(error: IssueGroupError): string {
+    const message = this.escapeHtml(error.message);
+    const variant = error.severity === 'warning' ? 'warning' : 'error';
+    const title = error.severity === 'warning' ? 'Proofreading warning' : 'Proofreading error';
+    return `
+      <div class="group__notice group__notice--${variant}" role="alert">
+        <strong>${this.escapeHtml(title)}</strong>
+        <p>${message}</p>
+      </div>
+    `;
   }
 
   private renderIssueCard(group: IssueElementGroup, issue: SidepanelIssue): string {
@@ -326,6 +350,40 @@ export class ProoflyIssuesPanel extends HTMLElement {
         display: flex;
         flex-direction: column;
         gap: var(--spacing-sm);
+      }
+
+      .group__notice {
+        border-radius: var(--radius-md);
+        border: 1px solid var(--color-border);
+        background: var(--color-surface-subtle);
+        color: var(--color-text-secondary);
+        padding: var(--spacing-sm);
+        font-size: var(--font-size-sm);
+        line-height: var(--line-height-base);
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-2xs);
+      }
+
+      .group__notice strong {
+        font-size: var(--font-size-sm);
+        font-weight: var(--font-weight-semibold);
+      }
+
+      .group__notice p {
+        margin: 0;
+      }
+
+      .group__notice--warning {
+        border-color: var(--color-warning-border);
+        background: var(--color-warning-surface);
+        color: var(--color-warning-text);
+      }
+
+      .group__notice--error {
+        border-color: rgba(207, 66, 66, 0.4);
+        background: rgba(207, 66, 66, 0.08);
+        color: var(--color-proofly-red);
       }
 
       .issue {

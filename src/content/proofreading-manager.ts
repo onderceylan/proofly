@@ -47,6 +47,8 @@ import {
   resolveElementKind,
   toSidepanelIssue,
   type IssueElementGroup,
+  type IssueGroupErrorCode,
+  type IssueGroupError,
   type IssuesUpdateMessage,
   type IssuesUpdatePayload,
 } from '../shared/messages/issues.ts';
@@ -75,6 +77,10 @@ export class ProofreadingManager {
   private readonly elementIds = new WeakMap<HTMLElement, string>();
   private readonly elementLookup = new Map<string, HTMLElement>();
   private readonly elementCorrections = new Map<HTMLElement, ProofreadCorrection[]>();
+  private readonly elementMessages = new Map<
+    HTMLElement,
+    Map<IssueGroupErrorCode, IssueGroupError>
+  >();
   private lastProofreaderBusy = false;
   private pendingIssuesUpdate = false;
   private issuesRevision = 0;
@@ -171,6 +177,7 @@ export class ProofreadingManager {
         this.reportIgnoredElement(target, reason);
         return;
       }
+      this.clearElementMessage(target);
       this.registerElement(target);
       if (shouldMirrorOnElement(target)) {
         return;
@@ -442,6 +449,109 @@ export class ProofreadingManager {
     this.elementCorrections.set(element, corrections);
   }
 
+  private setElementMessage(element: HTMLElement, message: IssueGroupError): void {
+    const messages =
+      this.elementMessages.get(element) ?? new Map<IssueGroupErrorCode, IssueGroupError>();
+    const existing = messages.get(message.code);
+    if (
+      existing &&
+      existing.message === message.message &&
+      existing.severity === message.severity
+    ) {
+      return;
+    }
+    messages.set(message.code, message);
+    this.elementMessages.set(element, messages);
+    this.scheduleIssuesUpdate();
+  }
+
+  private clearElementMessage(element: HTMLElement, code?: IssueGroupErrorCode): void {
+    const messages = this.elementMessages.get(element);
+    if (!messages) {
+      return;
+    }
+
+    if (code) {
+      if (!messages.delete(code)) {
+        return;
+      }
+      if (messages.size === 0) {
+        this.elementMessages.delete(element);
+      }
+    } else {
+      this.elementMessages.delete(element);
+    }
+
+    this.scheduleIssuesUpdate();
+  }
+
+  private getElementMessages(element: HTMLElement): IssueGroupError[] | null {
+    const messages = this.elementMessages.get(element);
+    if (!messages || messages.size === 0) {
+      return null;
+    }
+    return Array.from(messages.values());
+  }
+
+  private buildUnsupportedLanguageError(language: string, errorMessage?: string): IssueGroupError {
+    const languageLabel = language?.trim() || 'unknown';
+    const details = errorMessage ? ` Reason: ${errorMessage}` : '';
+    return {
+      code: 'unsupported-language',
+      severity: 'error',
+      message: `Proofreader API rejected language "${languageLabel}".${details}`.trim(),
+      details: {
+        language: languageLabel,
+      },
+    };
+  }
+
+  private buildLanguageDetectionUnconfidentWarning(): IssueGroupError {
+    return {
+      code: 'language-detection-unconfident',
+      severity: 'warning',
+      message:
+        "Could not confidently detect this field's language. Defaulting to English for proofreading.",
+    };
+  }
+
+  private buildLanguageDetectionError(): IssueGroupError {
+    return {
+      code: 'language-detection-error',
+      severity: 'error',
+      message:
+        'Language detection failed on this field. Defaulting to English; results might be less accurate.',
+    };
+  }
+
+  private isUnsupportedLanguageError(error: unknown): boolean {
+    if (!error) {
+      return false;
+    }
+    const message = this.extractErrorMessage(error)?.toLowerCase() ?? '';
+    if (error instanceof DOMException && error.name === 'NotAllowedError') {
+      return message.includes('language');
+    }
+    return message.includes('language options') || message.includes('unsupported language');
+  }
+
+  private extractErrorMessage(error: unknown): string | null {
+    if (!error) {
+      return null;
+    }
+    if (error instanceof Error && error.message) {
+      return error.message;
+    }
+    if (typeof error === 'string') {
+      return error;
+    }
+    return null;
+  }
+
+  private getLanguageCacheKey(language: string): string {
+    return language.trim().toLowerCase() || 'unknown';
+  }
+
   private updateElementCorrectionLookup(
     element: HTMLElement,
     corrections: ProofreadCorrection[]
@@ -462,8 +572,18 @@ export class ProofreadingManager {
   }
 
   private emitIssuesUpdate(): void {
-    const entries = Array.from(this.elementCorrections.entries()).filter(
-      ([, corrections]) => corrections.length > 0
+    const combinedEntries = new Map<HTMLElement, ProofreadCorrection[]>();
+    for (const [element, corrections] of this.elementCorrections.entries()) {
+      combinedEntries.set(element, corrections);
+    }
+    for (const element of this.elementMessages.keys()) {
+      if (!combinedEntries.has(element)) {
+        combinedEntries.set(element, []);
+      }
+    }
+
+    const entries = Array.from(combinedEntries.entries()).filter(
+      ([element, corrections]) => corrections.length > 0 || this.elementMessages.has(element)
     );
     entries.sort(([elementA], [elementB]) => {
       if (elementA === elementB) {
@@ -498,8 +618,9 @@ export class ProofreadingManager {
           return toSidepanelIssue(elementId, correction, originalText, issueId);
         })
         .filter((issue) => issue.originalText.length > 0 || issue.replacementText.length > 0);
+      const groupMessages = this.getElementMessages(element);
 
-      if (issues.length === 0) {
+      if (issues.length === 0 && (!groupMessages || groupMessages.length === 0)) {
         continue;
       }
 
@@ -509,6 +630,7 @@ export class ProofreadingManager {
         kind: resolveElementKind(element),
         label: normalizeIssueLabel(element),
         issues,
+        errors: groupMessages ?? null,
       });
     }
 
@@ -540,7 +662,7 @@ export class ProofreadingManager {
       logger.warn({ error }, 'Failed to broadcast issues update');
     });
 
-    if (elements.length === 0) {
+    if (issueTotal === 0) {
       void chrome.runtime.sendMessage({ type: 'proofly:clear-badge' }).catch((error) => {
         logger.warn({ error }, 'Failed to request badge clear');
       });
@@ -660,27 +782,76 @@ export class ProofreadingManager {
       if (this.languageDetectionService) {
         try {
           detectedLanguage = await this.languageDetectionService.detectLanguage(text);
+          if (detectedLanguage) {
+            this.clearElementMessage(element, 'language-detection-unconfident');
+            this.clearElementMessage(element, 'language-detection-error');
+          } else {
+            this.setElementMessage(element, this.buildLanguageDetectionUnconfidentWarning());
+            this.clearElementMessage(element, 'language-detection-error');
+          }
         } catch (error) {
           logger.warn({ error }, 'Language detection failed, falling back to English');
+          this.clearElementMessage(element, 'language-detection-unconfident');
+          this.setElementMessage(element, this.buildLanguageDetectionError());
           detectedLanguage = null;
         }
+      } else {
+        this.clearElementMessage(element, 'language-detection-unconfident');
+        this.clearElementMessage(element, 'language-detection-error');
       }
 
-      const language = detectedLanguage || 'en';
+      const requestedLanguage = detectedLanguage ?? 'unknown';
       this.handleProofreadLifecycle({
         status: 'language-detected',
         element,
         executionId: context.executionId,
         textLength: text.length,
         language: detectedLanguage,
-        fallbackLanguage: language,
+        fallbackLanguage: 'en',
       });
-      const service = await this.getOrCreateProofreaderService(language);
+
+      let service: ReturnType<typeof createProofreadingService>;
+      try {
+        service = await this.getOrCreateProofreaderService(requestedLanguage);
+      } catch (error) {
+        if (this.isUnsupportedLanguageError(error)) {
+          const message = this.extractErrorMessage(error);
+          this.setElementMessage(
+            element,
+            this.buildUnsupportedLanguageError(requestedLanguage, message ?? undefined)
+          );
+          logger.warn(
+            { language: requestedLanguage, error: message },
+            'Proofreader rejected requested language'
+          );
+          return null;
+        }
+        throw error;
+      }
+
+      this.clearElementMessage(element, 'unsupported-language');
+
       if (!service.canProofread(text)) {
         return null;
       }
 
-      return service.proofread(text);
+      try {
+        return await service.proofread(text);
+      } catch (error) {
+        if (this.isUnsupportedLanguageError(error)) {
+          const message = this.extractErrorMessage(error);
+          this.setElementMessage(
+            element,
+            this.buildUnsupportedLanguageError(requestedLanguage, message ?? undefined)
+          );
+          logger.warn(
+            { language: requestedLanguage, error: message },
+            'Proofreader rejected proofreading request'
+          );
+          return null;
+        }
+        throw error;
+      }
     });
   }
 
@@ -921,8 +1092,9 @@ export class ProofreadingManager {
   private async getOrCreateProofreaderService(
     language: string
   ): Promise<ReturnType<typeof createProofreadingService>> {
-    if (this.proofreaderServices.has(language)) {
-      return this.proofreaderServices.get(language)!;
+    const cacheKey = this.getLanguageCacheKey(language);
+    if (this.proofreaderServices.has(cacheKey)) {
+      return this.proofreaderServices.get(cacheKey)!;
     }
 
     logger.info(`Creating proofreader for language: ${language}`);
@@ -936,7 +1108,7 @@ export class ProofreadingManager {
     const service = createProofreadingService(adapter, undefined, {
       onBusyChange: (busy) => this.reportProofreaderBusy(busy),
     });
-    this.proofreaderServices.set(language, service);
+    this.proofreaderServices.set(cacheKey, service);
     return service;
   }
 
@@ -1014,6 +1186,7 @@ export class ProofreadingManager {
     this.elementCorrections.clear();
     this.elementLookup.clear();
     this.elementIssueLookup.clear();
+    this.elementMessages.clear();
 
     this.proofreaderServices.forEach((service) => service.destroy());
     this.proofreaderServices.clear();
