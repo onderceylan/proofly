@@ -195,7 +195,7 @@ export class CorrectionPopover extends HTMLElement {
     const escapedSuggestion = this.escapeHtml(suggestion);
 
     if (escapedSuggestion === '') {
-      return `<span style="text-decoration: line-through; color: var(--color-error);">${this.escapeHtml(issueText)}</span>`;
+      return `<span class="clipped" style="text-decoration: line-through; color: var(--color-error);">${this.escapeHtml(issueText)}</span>`;
     }
 
     if (suggestion === ' ') {
@@ -338,6 +338,15 @@ export class CorrectionPopover extends HTMLElement {
       .correction-suggestion strong {
         font-weight: 600;
         color: var(--color-text-secondary);
+      }
+      
+      .correction-suggestion .clipped {
+        max-width: 20ch;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
 
       .correction-explanation {
