@@ -20,8 +20,8 @@ body {
 .prfly-panel-busy #app::before {
   content: '';
   position: absolute;
-  inset: 0.3rem;
-  filter: blur(0.25rem);
+  inset: 0.4rem;
+  filter: blur(0.4rem);
   background-color: var(--color-surface-subtle);
   height: 100%;
   z-index: -1;
