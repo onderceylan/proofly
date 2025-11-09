@@ -32,12 +32,38 @@ export function isSpellcheckDisabled(element: Element): element is HTMLElement {
   return typeof value === 'string' && value.trim().toLowerCase() === 'false';
 }
 
+export function isAutocorrectDisabled(element: Element): element is HTMLElement {
+  if (!(element instanceof HTMLElement)) {
+    return false;
+  }
+
+  const value = element.getAttribute('autocorrect');
+  return typeof value === 'string' && value.trim().toLowerCase() === 'off';
+}
+
+export function isWritingSuggestionsDisabled(element: Element): element is HTMLElement {
+  if (!(element instanceof HTMLElement)) {
+    return false;
+  }
+
+  const value = element.getAttribute('writingsuggestions');
+  return typeof value === 'string' && value.trim().toLowerCase() === 'false';
+}
+
 export function shouldProofread(element: Element): element is HTMLElement {
   if (!isProofreadTarget(element)) {
     return false;
   }
 
   if (isSpellcheckDisabled(element)) {
+    return false;
+  }
+
+  if (isAutocorrectDisabled(element)) {
+    return false;
+  }
+
+  if (isWritingSuggestionsDisabled(element)) {
     return false;
   }
 
