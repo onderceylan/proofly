@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.1](https://github.com/onderceylan/proofly/compare/v0.2.0...v0.2.1) (2025-11-10)
+
+
+### Miscellaneous Chores
+
+* fix format of changelog ([469be4f](https://github.com/onderceylan/proofly/commit/469be4f869968f607a8050525910fc7fcf83221c))
+
+
+### Bug Fixes
+
+* package version resolve in release workflow ([9a3f053](https://github.com/onderceylan/proofly/commit/9a3f053bcf2f1bf9e57b914d91f35ec54bbcc762))
+
 ## [0.2.0](https://github.com/onderceylan/proofly/compare/v0.1.2...v0.2.0) (2025-11-10)
 
 ### Miscellaneous Chores
