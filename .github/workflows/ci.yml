@@ -12,6 +12,8 @@ on:
       - reopened
       - ready_for_review
       - unlocked
+    paths-ignore:
+      - 'CHANGELOG.md'
 
 permissions:
   contents: read

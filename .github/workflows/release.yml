@@ -45,7 +45,10 @@ jobs:
       - name: Resolve package version
         if: ${{ steps.release.outputs.release_created == 'true' }}
         id: pkg
-        run: echo "version=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Generate artifact hash
         if: ${{ steps.release.outputs.release_created == 'true' }}
@@ -64,4 +67,9 @@ jobs:
         if: ${{ steps.release.outputs.release_created == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload ${{ steps.release.outputs.tag_name }} ./release/crx-proofly-${{ steps.pkg.outputs.version }}.zip ./release/crx-proofly-${{ steps.pkg.outputs.version }}.zip.sha256
+        run: |
+          gh release upload \
+            "${{ steps.release.outputs.release_tag_name }}" \
+            "./release/crx-proofly-${{ steps.pkg.outputs.version }}.zip" \
+            "./release/crx-proofly-${{ steps.pkg.outputs.version }}.zip.sha256" \
+            --clobber
