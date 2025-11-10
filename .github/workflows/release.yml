@@ -69,7 +69,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload \
-            "${{ steps.release.outputs.release_tag_name }}" \
+            "${{ steps.release.outputs.tag_name }}" \
             "./release/crx-proofly-${{ steps.pkg.outputs.version }}.zip" \
             "./release/crx-proofly-${{ steps.pkg.outputs.version }}.zip.sha256" \
             --clobber
