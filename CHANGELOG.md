@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/onderceylan/proofly/compare/v0.2.1...v0.2.2) (2025-11-10)
+
+
+### Bug Fixes
+
+* use correct release please output ([d441f93](https://github.com/onderceylan/proofly/commit/d441f936200c555243d8939b90c91501d6fe7dc3))
+
 ## [0.2.1](https://github.com/onderceylan/proofly/compare/v0.2.0...v0.2.1) (2025-11-10)
 
 
