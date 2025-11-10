@@ -49,15 +49,6 @@ vi.mock('../services/logger.ts', () => ({
   },
 }));
 
-vi.mock('../services/proofreader.ts', () => ({
-  createProofreader: vi.fn(),
-  createProofreaderAdapter: vi.fn(),
-  createProofreadingService: vi.fn(() => ({
-    canProofread: () => true,
-    proofread: vi.fn(),
-  })),
-}));
-
 vi.mock('../services/language-detector.ts', () => ({
   createLanguageDetector: vi.fn(),
   createLanguageDetectorAdapter: vi.fn(),

@@ -1,6 +1,7 @@
 import { STORAGE_KEYS } from '../shared/constants.ts';
 import { initializeStorage, onStorageChange } from '../shared/utils/storage.ts';
 import { logger } from '../services/logger.ts';
+import { handleProofreadRequest, resetProofreaderServices } from './proofreader-proxy.ts';
 
 import type {
   IssuesUpdatePayload,
@@ -9,6 +10,7 @@ import type {
   IssuesStateResponseMessage,
   ProoflyMessage,
   ProofreaderStateMessage,
+  ProofreadRequestMessage,
 } from '../shared/messages/issues.ts';
 import { serializeError } from '../shared/utils/serialize.ts';
 
@@ -302,6 +304,32 @@ chrome.runtime.onMessage.addListener((message: ProoflyMessage, sender, sendRespo
     return false;
   }
 
+  if (message.type === 'proofly:proofread-request') {
+    handleProofreadRequest(message as ProofreadRequestMessage)
+      .then((response) => sendResponse(response))
+      .catch((error) => {
+        logger.error(
+          { error: serializeError(error), requestId: message.payload?.requestId },
+          'Unhandled error while proxying proofread request'
+        );
+        sendResponse({
+          requestId: (message as ProofreadRequestMessage).payload.requestId,
+          ok: false,
+          error: {
+            code: 'unknown',
+            message:
+              error instanceof Error
+                ? error.message
+                : typeof error === 'string'
+                  ? error
+                  : 'Proofread request failed',
+            name: error instanceof Error ? error.name : undefined,
+          },
+        });
+      });
+    return true;
+  }
+
   return false;
 });
 
@@ -343,3 +371,9 @@ chrome.action.onClicked.addListener(async (tab) => {
     logger.error({ error, tabId: tab.id }, 'Failed to configure side panel');
   }
 });
+
+if ('onSuspend' in chrome.runtime) {
+  chrome.runtime.onSuspend.addListener(() => {
+    resetProofreaderServices();
+  });
+}

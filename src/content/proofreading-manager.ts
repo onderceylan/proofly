@@ -1,11 +1,6 @@
 import { AsyncQueue } from '../shared/utils/queue.ts';
 import { ContentHighlighter } from './components/content-highlighter.ts';
 import {
-  createProofreader,
-  createProofreaderAdapter,
-  createProofreadingService,
-} from '../services/proofreader.ts';
-import {
   createLanguageDetector,
   createLanguageDetectorAdapter,
   createLanguageDetectionService,
@@ -51,6 +46,8 @@ import {
   type IssueGroupError,
   type IssuesUpdateMessage,
   type IssuesUpdatePayload,
+  type ProofreadRequestMessage,
+  type ProofreadResponse,
 } from '../shared/messages/issues.ts';
 import {
   emitProofreadControlEvent,
@@ -61,10 +58,6 @@ export class ProofreadingManager {
   private readonly highlighter = new ContentHighlighter();
   private readonly elementSessions = new Map<HTMLElement, TargetSession>();
   private readonly elementIssueLookup = new Map<HTMLElement, Map<string, ProofreadCorrection>>();
-  private readonly proofreaderServices = new Map<
-    string,
-    ReturnType<typeof createProofreadingService>
-  >();
   private readonly proofreadQueue = new AsyncQueue();
   private readonly registeredElements = new Set<HTMLElement>();
 
@@ -524,34 +517,6 @@ export class ProofreadingManager {
     };
   }
 
-  private isUnsupportedLanguageError(error: unknown): boolean {
-    if (!error) {
-      return false;
-    }
-    const message = this.extractErrorMessage(error)?.toLowerCase() ?? '';
-    if (error instanceof DOMException && error.name === 'NotAllowedError') {
-      return message.includes('language');
-    }
-    return message.includes('language options') || message.includes('unsupported language');
-  }
-
-  private extractErrorMessage(error: unknown): string | null {
-    if (!error) {
-      return null;
-    }
-    if (error instanceof Error && error.message) {
-      return error.message;
-    }
-    if (typeof error === 'string') {
-      return error;
-    }
-    return null;
-  }
-
-  private getLanguageCacheKey(language: string): string {
-    return language.trim().toLowerCase() || 'unknown';
-  }
-
   private updateElementCorrectionLookup(
     element: HTMLElement,
     corrections: ProofreadCorrection[]
@@ -800,59 +765,96 @@ export class ProofreadingManager {
         this.clearElementMessage(element, 'language-detection-error');
       }
 
-      const requestedLanguage = detectedLanguage ?? 'unknown';
+      const fallbackLanguage = 'en';
+      const requestedLanguage = detectedLanguage?.trim() || fallbackLanguage;
       this.handleProofreadLifecycle({
         status: 'language-detected',
         element,
         executionId: context.executionId,
         textLength: text.length,
         language: detectedLanguage,
-        fallbackLanguage: 'en',
+        fallbackLanguage,
       });
 
-      let service: ReturnType<typeof createProofreadingService>;
-      try {
-        service = await this.getOrCreateProofreaderService(requestedLanguage);
-      } catch (error) {
-        if (this.isUnsupportedLanguageError(error)) {
-          const message = this.extractErrorMessage(error);
+      const response = await this.requestProofread(
+        text,
+        requestedLanguage,
+        fallbackLanguage,
+        context
+      );
+      if (!response.ok) {
+        if (response.error.code === 'unsupported-language') {
           this.setElementMessage(
             element,
-            this.buildUnsupportedLanguageError(requestedLanguage, message ?? undefined)
+            this.buildUnsupportedLanguageError(requestedLanguage, response.error.message)
           );
           logger.warn(
-            { language: requestedLanguage, error: message },
+            { language: requestedLanguage, error: response.error.message },
             'Proofreader rejected requested language'
           );
           return null;
         }
-        throw error;
+
+        if (response.error.code === 'cancelled') {
+          logger.info(
+            {
+              elementId: this.getElementId(element),
+              language: requestedLanguage,
+            },
+            'Proofreader request cancelled, scheduling retry'
+          );
+          queueMicrotask(() => {
+            this.controller.scheduleProofread(element);
+          });
+          throw new DOMException(
+            response.error.message || 'Proofreader request cancelled',
+            'AbortError'
+          );
+        }
+
+        throw new Error(response.error.message || 'Proofreader request failed');
       }
 
       this.clearElementMessage(element, 'unsupported-language');
+      return response.result;
+    });
+  }
 
-      if (!service.canProofread(text)) {
-        return null;
+  private async requestProofread(
+    text: string,
+    language: string,
+    fallbackLanguage: string,
+    context: ProofreadRunContext
+  ): Promise<ProofreadResponse> {
+    const request: ProofreadRequestMessage = {
+      type: 'proofly:proofread-request',
+      payload: {
+        requestId: context.executionId,
+        text,
+        language,
+        fallbackLanguage,
+      },
+    };
+
+    this.reportProofreaderBusy(true);
+    try {
+      const response = (await chrome.runtime.sendMessage(request)) as ProofreadResponse | null;
+      if (!response) {
+        throw new Error('Proofreader service returned empty response');
       }
-
-      try {
-        return await service.proofread(text);
-      } catch (error) {
-        if (this.isUnsupportedLanguageError(error)) {
-          const message = this.extractErrorMessage(error);
-          this.setElementMessage(
-            element,
-            this.buildUnsupportedLanguageError(requestedLanguage, message ?? undefined)
-          );
-          logger.warn(
-            { language: requestedLanguage, error: message },
-            'Proofreader rejected proofreading request'
-          );
-          return null;
-        }
+      return response;
+    } catch (error) {
+      logger.error(
+        { error, language, fallbackLanguage },
+        'Failed to dispatch proofreader request to service worker'
+      );
+      if (error instanceof Error) {
         throw error;
       }
-    });
+      throw new Error(String(error));
+    } finally {
+      this.reportProofreaderBusy(false);
+    }
   }
 
   private filterCorrections(
@@ -1089,29 +1091,6 @@ export class ProofreadingManager {
     return [...modifiers, normalizedKey].join('+');
   }
 
-  private async getOrCreateProofreaderService(
-    language: string
-  ): Promise<ReturnType<typeof createProofreadingService>> {
-    const cacheKey = this.getLanguageCacheKey(language);
-    if (this.proofreaderServices.has(cacheKey)) {
-      return this.proofreaderServices.get(cacheKey)!;
-    }
-
-    logger.info(`Creating proofreader for language: ${language}`);
-    const proofreader = await createProofreader({
-      expectedInputLanguages: [language],
-      includeCorrectionTypes: true,
-      includeCorrectionExplanations: true,
-      correctionExplanationLanguage: language,
-    });
-    const adapter = createProofreaderAdapter(proofreader);
-    const service = createProofreadingService(adapter, undefined, {
-      onBusyChange: (busy) => this.reportProofreaderBusy(busy),
-    });
-    this.proofreaderServices.set(cacheKey, service);
-    return service;
-  }
-
   private isEditableElement(element: HTMLElement): boolean {
     return shouldProofread(element);
   }
@@ -1187,9 +1166,6 @@ export class ProofreadingManager {
     this.elementLookup.clear();
     this.elementIssueLookup.clear();
     this.elementMessages.clear();
-
-    this.proofreaderServices.forEach((service) => service.destroy());
-    this.proofreaderServices.clear();
 
     this.languageDetectionService?.destroy();
     this.languageDetectionService = null;

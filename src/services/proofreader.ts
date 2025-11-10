@@ -38,7 +38,7 @@ export const DEFAULT_SERVICE_CONFIG: ProofreaderServiceConfig = {
 };
 
 export async function checkProofreaderAvailability(): Promise<Availability> {
-  if (!('Proofreader' in window)) {
+  if (!('Proofreader' in globalThis)) {
     logger.warn('Chrome Built-in Proofreader API not available');
     return 'unavailable';
   }

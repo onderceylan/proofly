@@ -1,4 +1,4 @@
-import type { CorrectionType, ProofreadCorrection } from '../types.ts';
+import type { CorrectionType, ProofreadCorrection, ProofreadResult } from '../types.ts';
 
 export type IssueElementKind = 'input' | 'textarea' | 'contenteditable';
 
@@ -29,6 +29,43 @@ export interface IssueGroupError {
     supportedLanguages?: string[];
   };
 }
+
+export type ProofreadServiceErrorCode =
+  | 'unsupported-language'
+  | 'unavailable'
+  | 'unknown'
+  | 'cancelled';
+
+export interface ProofreadServiceError {
+  code: ProofreadServiceErrorCode;
+  message: string;
+  name?: string;
+  data?: Record<string, unknown>;
+}
+
+export interface ProofreadRequestMessage {
+  type: 'proofly:proofread-request';
+  payload: {
+    requestId: string;
+    text: string;
+    language: string;
+    fallbackLanguage: string;
+  };
+}
+
+export interface ProofreadResponseSuccess {
+  requestId: string;
+  ok: true;
+  result: ProofreadResult;
+}
+
+export interface ProofreadResponseFailure {
+  requestId: string;
+  ok: false;
+  error: ProofreadServiceError;
+}
+
+export type ProofreadResponse = ProofreadResponseSuccess | ProofreadResponseFailure;
 
 export interface IssueElementGroup {
   elementId: string;
@@ -104,7 +141,8 @@ export type ProoflyMessage =
   | ProofreaderStateUpdateMessage
   | IssuesStateRequestMessage
   | IssuesStateResponseMessage
-  | ClearBadgeMessage;
+  | ClearBadgeMessage
+  | ProofreadRequestMessage;
 
 export function toSidepanelIssue(
   elementId: string,
