@@ -19,8 +19,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          sparse-checkout: .commitlintrc
 
       - name: Commit lint
         uses: ahmadnassri/action-commit-lint@v2
