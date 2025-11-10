@@ -4,7 +4,7 @@
     ".": {
       "release-type": "node",
       "package-name": "",
-      "pull-request-title-pattern": "chore: release ${version}",
+      "pull-request-title-pattern": "chore: release v${version}",
       "pull-request-header": "\uD83D\uDCE6 Creating a new proofly release",
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
