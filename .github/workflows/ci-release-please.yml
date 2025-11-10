@@ -1,0 +1,15 @@
+name: CI - release-please
+
+on:
+  push:
+    branches:
+      - 'release-please**'
+  pull_request:
+    branches:
+      - 'release-please**'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "validate mock"
