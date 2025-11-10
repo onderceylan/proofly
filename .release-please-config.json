@@ -3,6 +3,7 @@
   "packages": {
     ".": {
       "release-type": "node",
+      "package-name": "",
       "pull-request-title-pattern": "chore: release ${version}",
       "pull-request-header": "\uD83D\uDCE6 Creating a new proofly release",
       "changelog-path": "CHANGELOG.md",
