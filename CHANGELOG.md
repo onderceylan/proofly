@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/onderceylan/proofly/compare/v0.3.0...v0.3.1) (2025-11-11)
+
+
+### Bug Fixes
+
+* check for spellcheck disabled ancestors ([f140c8d](https://github.com/onderceylan/proofly/commit/f140c8dae805f5a3eef88582bd2120f3e48bbd0f))
+
 ## [0.3.0](https://github.com/onderceylan/proofly/compare/v0.2.2...v0.3.0) (2025-11-11)
 
 
