@@ -86,7 +86,7 @@ export async function handleProofreadRequest(
     logger.info(
       {
         requestId,
-        result: result
+        result: result,
       },
       'Proofreader service completed request'
     );
