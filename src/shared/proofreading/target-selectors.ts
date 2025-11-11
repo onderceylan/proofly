@@ -23,7 +23,7 @@ export function isProofreadTarget(element: Element): element is HTMLElement {
   return element.isContentEditable;
 }
 
-export function isSpellcheckDisabled(element: Element): element is HTMLElement {
+export function isSpellcheckDisabled(element: Element): boolean {
   if (!(element instanceof HTMLElement)) {
     return false;
   }
@@ -32,7 +32,15 @@ export function isSpellcheckDisabled(element: Element): element is HTMLElement {
   return typeof value === 'string' && value.trim().toLowerCase() === 'false';
 }
 
-export function isAutocorrectDisabled(element: Element): element is HTMLElement {
+function hasSpellcheckDisabledAncestor(element: HTMLElement): boolean {
+  const parent = element.parentElement;
+  if (!parent) {
+    return false;
+  }
+  return parent.closest('[spellcheck="false"]') !== null;
+}
+
+export function isAutocorrectDisabled(element: Element): boolean {
   if (!(element instanceof HTMLElement)) {
     return false;
   }
@@ -41,7 +49,7 @@ export function isAutocorrectDisabled(element: Element): element is HTMLElement 
   return typeof value === 'string' && value.trim().toLowerCase() === 'off';
 }
 
-export function isWritingSuggestionsDisabled(element: Element): element is HTMLElement {
+export function isWritingSuggestionsDisabled(element: Element): boolean {
   if (!(element instanceof HTMLElement)) {
     return false;
   }
@@ -64,6 +72,10 @@ export function shouldProofread(element: Element): element is HTMLElement {
   }
 
   if (isWritingSuggestionsDisabled(element)) {
+    return false;
+  }
+
+  if (hasSpellcheckDisabledAncestor(element)) {
     return false;
   }
 

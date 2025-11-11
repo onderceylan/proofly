@@ -14,6 +14,7 @@ class MockElement {
   tagName: string;
   attributes = new Map<string, string>();
   isContentEditable = false;
+  parentElement: MockElement | null = null;
 
   constructor(tagName: string) {
     this.tagName = tagName.toUpperCase();
@@ -31,6 +32,17 @@ class MockElement {
     return selector.split(',').some((raw) => this.matchesSingle(raw.trim()));
   }
 
+  closest(selector: string) {
+    let current: MockElement | null = this;
+    while (current) {
+      if (current.matches(selector)) {
+        return current;
+      }
+      current = current.parentElement;
+    }
+    return null;
+  }
+
   private matchesSingle(selector: string) {
     if (selector === 'textarea') {
       return this.tagName === 'TEXTAREA';
@@ -44,6 +56,9 @@ class MockElement {
     if (selector === '[contenteditable]:not([contenteditable="false"])') {
       const attr = this.getAttribute('contenteditable');
       return this.isContentEditable && attr?.toLowerCase() !== 'false';
+    }
+    if (selector === '[spellcheck="false"]') {
+      return this.getAttribute('spellcheck')?.toLowerCase() === 'false';
     }
     return false;
   }
@@ -104,6 +119,16 @@ describe('proofread target selectors', () => {
     expect(shouldProofread(el as unknown as Element)).toBe(true);
     el.setAttribute('spellcheck', 'false');
     expect(shouldProofread(el as unknown as Element)).toBe(false);
+  });
+
+  it('ignores elements when a spellcheck-disabled ancestor exists', () => {
+    const wrapper = new MockElement('div');
+    wrapper.setAttribute('spellcheck', 'false');
+
+    const child = new MockElement('textarea');
+    child.parentElement = wrapper;
+
+    expect(shouldProofread(child as unknown as Element)).toBe(false);
   });
 
   it('detects mirror candidates and text inputs', () => {
