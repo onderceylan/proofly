@@ -32,15 +32,12 @@ class MockElement {
     return selector.split(',').some((raw) => this.matchesSingle(raw.trim()));
   }
 
-  closest(selector: string) {
-    let current: MockElement | null = this;
-    while (current) {
-      if (current.matches(selector)) {
-        return current;
-      }
-      current = current.parentElement;
+  closest(selector: string): MockElement | null {
+    if (this.matches(selector)) {
+      return this;
     }
-    return null;
+
+    return this.parentElement ? this.parentElement.closest(selector) : null;
   }
 
   private matchesSingle(selector: string) {

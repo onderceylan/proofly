@@ -1,2 +1,4 @@
 prettier $(git diff --cached --name-only --diff-filter=ACMR | sed 's| |\\ |g') --write --ignore-unknown
+npm run lint
+npm run typecheck
 git update-index --again
