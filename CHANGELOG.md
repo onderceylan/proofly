@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.3.0](https://github.com/onderceylan/proofly/compare/v0.2.2...v0.3.0) (2025-11-11)
+
+
+### Miscellaneous Chores
+
+* format files ([d79d931](https://github.com/onderceylan/proofly/commit/d79d931588e7a6bf8c4d47642206b2c986de374e))
+* ignore format of changelog ([d87a41f](https://github.com/onderceylan/proofly/commit/d87a41f5b059a37d7a407b7a23fc615b2c6a23d6))
+
+
+### Features
+
+* only proofread selected text with manual trigger ([d2cbb99](https://github.com/onderceylan/proofly/commit/d2cbb998eb5d7e84e914c44f4cb9530eaa912d87))
+* proofread multilingual text inputs ([7691de8](https://github.com/onderceylan/proofly/commit/7691de821d956488c52678ef87a46311f0de6ed0))
+* publish static assets to github pages ([91fb93f](https://github.com/onderceylan/proofly/commit/91fb93f1702c590945419bbc8df278f6036e7f61))
+
+
+### Bug Fixes
+
+* make live test area real-world like use case ([c8d6673](https://github.com/onderceylan/proofly/commit/c8d667355b86388285e7e36640541b1dbba52be2))
+* update deploy-pages paths ([bb61fcd](https://github.com/onderceylan/proofly/commit/bb61fcd21550cfd6d33127773cdde6ef1d0eebf3))
+
 ## [0.2.2](https://github.com/onderceylan/proofly/compare/v0.2.1...v0.2.2) (2025*11*10)
 
 
