@@ -329,7 +329,7 @@ export class ProofreadingManager {
 
     const element = node as HTMLElement;
 
-    if (isProofreadTarget(element)) {
+    if (this.isProofreadTarget(element)) {
       this.cleanupRemovedElement(element);
     }
 
