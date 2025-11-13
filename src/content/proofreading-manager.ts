@@ -190,7 +190,6 @@ export class ProofreadingManager {
       const target = event.target as HTMLElement;
       if (this.activeElement === target) {
         this.activeElement = null;
-        this.registeredElements.delete(target);
       }
     };
 
@@ -201,26 +200,8 @@ export class ProofreadingManager {
     this.observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
         if (mutation.type !== 'childList') continue;
-        mutation.addedNodes.forEach((node) => {
-          if (node.nodeType !== Node.ELEMENT_NODE) return;
-          const element = node as HTMLElement;
-          if (!this.isProofreadTarget(element)) {
-            return;
-          }
-          if (this.hasRegisteredContentEditableAncestor(element)) {
-            return;
-          }
-          if (!this.autoCorrectEnabled) {
-            return;
-          }
-          if (!this.shouldAutoProofread(element)) {
-            const reason = this.resolveAutoProofreadIgnoreReason(element);
-            this.reportIgnoredElement(element, reason);
-            return;
-          }
-          this.registerElement(element);
-          void this.controller.proofread(element);
-        });
+        mutation.removedNodes.forEach((node) => this.handleRemovedNode(node));
+        mutation.addedNodes.forEach((node) => this.handleAddedNode(node));
       }
     });
 
@@ -245,6 +226,115 @@ export class ProofreadingManager {
       this.ensureTargetSession(element as HTMLTextAreaElement | HTMLInputElement);
     } else {
       this.setupContentEditableCallbacks(element);
+    }
+  }
+
+  private cleanupRemovedElement(element: HTMLElement): void {
+    if (!this.registeredElements.has(element)) {
+      return;
+    }
+
+    const elementId = this.elementIds.get(element);
+    let needsIssuesUpdate = false;
+
+    // Remove from registered elements
+    this.registeredElements.delete(element);
+
+    // Clean up active element reference
+    if (this.activeElement === element) {
+      this.activeElement = null;
+    }
+
+    // Clean up active session element reference
+    if (this.activeSessionElement === element) {
+      this.activeSessionElement = null;
+    }
+
+    // Detach and remove session
+    const session = this.elementSessions.get(element);
+    if (session) {
+      session.detach();
+      this.elementSessions.delete(element);
+    }
+
+    // Remove from issue lookup
+    if (this.elementIssueLookup.has(element)) {
+      this.elementIssueLookup.delete(element);
+      needsIssuesUpdate = true;
+    }
+
+    // Remove from corrections
+    if (this.elementCorrections.has(element)) {
+      this.elementCorrections.delete(element);
+      needsIssuesUpdate = true;
+    }
+
+    // Remove from messages
+    if (this.elementMessages.has(element)) {
+      this.elementMessages.delete(element);
+      needsIssuesUpdate = true;
+    }
+
+    // Remove from element lookup
+    if (elementId) {
+      this.elementLookup.delete(elementId);
+    }
+
+    // Clear highlights
+    this.highlighter.clearHighlights(element);
+
+    // Unregister from controller
+    this.controller.unregisterTarget(element);
+
+    logger.info({ elementId }, 'Cleaned up removed element');
+
+    // Emit issues update if any tracked data was removed
+    if (needsIssuesUpdate) {
+      this.emitIssuesUpdate();
+    }
+  }
+
+  private handleAddedNode(node: Node): void {
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      return;
+    }
+
+    const element = node as HTMLElement;
+    if (!this.isProofreadTarget(element)) {
+      return;
+    }
+
+    if (this.hasRegisteredContentEditableAncestor(element)) {
+      return;
+    }
+
+    if (!this.autoCorrectEnabled) {
+      return;
+    }
+
+    if (!this.shouldAutoProofread(element)) {
+      const reason = this.resolveAutoProofreadIgnoreReason(element);
+      this.reportIgnoredElement(element, reason);
+      return;
+    }
+
+    this.registerElement(element);
+    void this.controller.proofread(element);
+  }
+
+  private handleRemovedNode(node: Node): void {
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      return;
+    }
+
+    const element = node as HTMLElement;
+
+    if (isProofreadTarget(element)) {
+      this.cleanupRemovedElement(element);
+    }
+
+    if (node.childNodes.length > 0) {
+      node.childNodes.forEach((child) => this.handleRemovedNode(child));
     }
   }
 
