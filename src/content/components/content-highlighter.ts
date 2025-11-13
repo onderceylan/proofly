@@ -53,7 +53,6 @@ export class ContentHighlighter {
 
   constructor() {
     this.initializeHighlights();
-    this.initializePopover();
     void this.initializeUnderlineStyle();
     void this.initializeAutofixSetting();
   }
@@ -78,6 +77,32 @@ export class ContentHighlighter {
     if (this.selectedCorrectionRange) {
       setSelectedHighlightColors(this.selectedCorrectionRange.type, this.correctionColors);
     }
+  }
+
+  setPopover(popover: CorrectionPopover | null): void {
+    if (this.popover === popover) {
+      return;
+    }
+
+    if (this.popoverHideCleanup) {
+      this.popoverHideCleanup();
+      this.popoverHideCleanup = null;
+    }
+
+    this.popover = popover;
+
+    if (!this.popover) {
+      return;
+    }
+
+    const handlePopoverHide = () => {
+      this.clearSelectedCorrection();
+    };
+
+    this.popover.addEventListener('proofly:popover-hide', handlePopoverHide);
+    this.popoverHideCleanup = () => {
+      this.popover?.removeEventListener('proofly:popover-hide', handlePopoverHide);
+    };
   }
 
   private initializeHighlights(): void {
@@ -129,35 +154,6 @@ export class ContentHighlighter {
     }
 
     updateHighlightStyle(this.currentUnderlineStyle, this.correctionColors);
-  }
-
-  private initializePopover(): void {
-    // Create popover in document body, not shadow DOM
-    if (!document.querySelector('proofly-correction-popover')) {
-      this.popover = document.createElement(
-        'proofly-correction-popover'
-      ) as unknown as CorrectionPopover;
-      document.body.appendChild(this.popover);
-    } else {
-      this.popover = document.querySelector(
-        'proofly-correction-popover'
-      ) as unknown as CorrectionPopover;
-    }
-
-    if (this.popoverHideCleanup) {
-      this.popoverHideCleanup();
-      this.popoverHideCleanup = null;
-    }
-
-    if (this.popover) {
-      const handlePopoverHide = () => {
-        this.clearSelectedCorrection();
-      };
-      this.popover.addEventListener('proofly:popover-hide', handlePopoverHide);
-      this.popoverHideCleanup = () => {
-        this.popover?.removeEventListener('proofly:popover-hide', handlePopoverHide);
-      };
-    }
   }
 
   highlight(element: HTMLElement, corrections: ProofreadCorrection[]): void {
@@ -674,10 +670,7 @@ export class ContentHighlighter {
     });
     this.dblClickHandlers.clear();
 
-    if (this.popover) {
-      this.popover.remove();
-      this.popover = null;
-    }
+    this.setPopover(null);
 
     if ('highlights' in CSS) {
       for (const errorType of ERROR_TYPES) {
@@ -700,11 +693,6 @@ export class ContentHighlighter {
     this.selectedHighlight = null;
     this.selectedElement = null;
     clearSelectedHighlightColors();
-
-    if (this.popoverHideCleanup) {
-      this.popoverHideCleanup();
-      this.popoverHideCleanup = null;
-    }
   }
 
   clearSelection(): void {

@@ -102,38 +102,69 @@ export class ProofreadingManager {
   private readonly isMacPlatform = isMacOS();
 
   async initialize(): Promise<void> {
-    this.createPopover();
     await this.initializeCorrectionPreferences();
     await this.initializeProofreadPreferences();
     this.observeEditableElements();
     this.emitIssuesUpdate();
+    this.updatePopoverVisibility();
     logger.info('Proofreading manager ready');
   }
 
-  private createPopover(): void {
-    if (document.querySelector('proofly-correction-popover')) {
-      this.popover = document.querySelector('proofly-correction-popover') as CorrectionPopover;
-    } else {
-      this.popover = document.createElement('proofly-correction-popover') as CorrectionPopover;
-      document.body.appendChild(this.popover);
+  private ensurePopover(): void {
+    if (this.popover) {
+      // Popover already exists, no need to recreate or rebind listeners
+      return;
     }
+
+    let popover = document.querySelector('proofly-correction-popover') as CorrectionPopover | null;
+    if (!popover) {
+      popover = document.createElement('proofly-correction-popover') as CorrectionPopover;
+      document.body.appendChild(popover);
+    }
+
+    this.popover = popover;
+    this.highlighter.setPopover(this.popover);
 
     this.cleanupHandler(this.popoverHideCleanup);
-
-    if (this.popover) {
-      const handlePopoverHide = () => {
-        this.highlighter.clearSelection();
-        if (this.activeSessionElement) {
-          const session = this.elementSessions.get(this.activeSessionElement);
-          session?.clearActiveIssue();
-          this.activeSessionElement = null;
-        }
-      };
-      this.popover.addEventListener('proofly:popover-hide', handlePopoverHide);
-      this.popoverHideCleanup = () => {
-        this.popover?.removeEventListener('proofly:popover-hide', handlePopoverHide);
-      };
+    if (!this.popover) {
+      // Popover might have been cleared by highlighter.setPopover(null)
+      return;
     }
+
+    const handlePopoverHide = () => {
+      this.highlighter.clearSelection();
+      if (this.activeSessionElement) {
+        const session = this.elementSessions.get(this.activeSessionElement);
+        session?.clearActiveIssue();
+        this.activeSessionElement = null;
+      }
+    };
+    this.popover.addEventListener('proofly:popover-hide', handlePopoverHide);
+    this.popoverHideCleanup = () => {
+      this.popover?.removeEventListener('proofly:popover-hide', handlePopoverHide);
+    };
+  }
+
+  private detachPopover(): void {
+    if (!this.popover) {
+      return;
+    }
+
+    this.highlighter.setPopover(null);
+    this.cleanupHandler(this.popoverHideCleanup);
+    this.popoverHideCleanup = null;
+    this.popover.remove();
+    this.popover = null;
+  }
+
+  private updatePopoverVisibility(): void {
+    const hasCorrections = this.elementCorrections.size > 0;
+    if (this.autofixOnDoubleClick || !hasCorrections) {
+      this.detachPopover();
+      return;
+    }
+
+    this.ensurePopover();
   }
 
   private cleanupHandler(cleanup: (() => void) | null): void {
@@ -268,6 +299,7 @@ export class ProofreadingManager {
       this.elementCorrections.delete(element);
       needsIssuesUpdate = true;
     }
+    this.updatePopoverVisibility();
 
     // Remove from messages
     if (this.elementMessages.has(element)) {
@@ -453,6 +485,7 @@ export class ProofreadingManager {
         this.elementIssueLookup.delete(element);
         this.elementCorrections.delete(element);
         this.scheduleIssuesUpdate(true);
+        this.updatePopoverVisibility();
       }
       return;
     }
@@ -463,6 +496,7 @@ export class ProofreadingManager {
       this.activeSessionElement = null;
     }
     this.emitIssuesUpdate();
+    this.updatePopoverVisibility();
   }
 
   private mapCorrectionsToIssues(
@@ -536,10 +570,12 @@ export class ProofreadingManager {
   private storeElementCorrections(element: HTMLElement, corrections: ProofreadCorrection[]): void {
     if (corrections.length === 0) {
       this.elementCorrections.delete(element);
+      this.updatePopoverVisibility();
       return;
     }
 
     this.elementCorrections.set(element, corrections);
+    this.updatePopoverVisibility();
   }
 
   private setElementMessage(element: HTMLElement, message: IssueGroupError): void {
@@ -947,6 +983,9 @@ export class ProofreadingManager {
     y: number
   ): void {
     if (!this.popover) {
+      this.updatePopoverVisibility();
+    }
+    if (!this.popover) {
       return;
     }
 
@@ -1047,6 +1086,7 @@ export class ProofreadingManager {
   private updateAutofixOnDoubleClick(enabled: boolean): void {
     this.autofixOnDoubleClick = enabled;
     this.elementSessions.forEach((session) => session.setAutofixOnDoubleClick(enabled));
+    this.updatePopoverVisibility();
   }
 
   private scheduleIssuesUpdate(flushImmediately = false): void {
@@ -1260,7 +1300,7 @@ export class ProofreadingManager {
     this.controller.dispose();
 
     this.highlighter.destroy();
-    this.popover?.remove();
+    this.detachPopover();
     this.observer?.disconnect();
 
     this.elementSessions.forEach((session) => session.detach());
@@ -1272,9 +1312,6 @@ export class ProofreadingManager {
 
     this.registeredElements.clear();
     this.proofreadQueue.clear();
-
-    this.cleanupHandler(this.popoverHideCleanup);
-    this.popoverHideCleanup = null;
 
     this.cleanupHandler(this.correctionTypeCleanup);
     this.correctionTypeCleanup = null;
