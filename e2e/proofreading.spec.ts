@@ -23,6 +23,8 @@ import {
   getImmediateHighlightCount,
   startProofreadControlCapture,
   triggerProofreadShortcut,
+  waitForHighlighterPresence,
+  hasHighlighterHost,
 } from './helpers/utils';
 import { Page, type KeyInput } from 'puppeteer-core';
 
@@ -120,6 +122,7 @@ describe('Proofly proofreading', () => {
 
     const highlightCount = await getImmediateHighlightCount(page, 'test-email');
     expect(highlightCount).toBe(0);
+    expect(await hasHighlighterHost(page, 'test-email')).toBe(false);
   });
 
   test('should not trigger proofreading on spellcheck-disabled text input', async () => {
@@ -328,6 +331,7 @@ describe('Proofly proofreading', () => {
     await page.goto('http://localhost:8080/test.html', { waitUntil: 'networkidle0' });
 
     await page.waitForSelector('#test-input', { timeout: 10000 });
+    await waitForHighlighterPresence(page, 'test-input', { present: false });
     await page.focus('#test-input');
 
     await page.evaluate(() => {
@@ -337,7 +341,18 @@ describe('Proofly proofreading', () => {
       }
     });
 
+    expect(await hasHighlighterHost(page, 'test-input')).toBe(false);
+
     let remaining = await waitForHighlightCount(page, 'test-input', (count) => count > 0);
+    await waitForHighlighterPresence(page, 'test-input', { present: true });
+
+    await page.waitForFunction(
+      () => {
+        const popover = document.querySelector('proofly-correction-popover');
+        return popover?.isConnected ?? false;
+      },
+      { timeout: 10000 }
+    );
 
     while (remaining > 0) {
       const highlights = await collectHighlightDetails(page, 'test-input');
@@ -366,6 +381,7 @@ describe('Proofly proofreading', () => {
 
     const finalHighlights = await collectHighlightDetails(page, 'test-input');
     expect(finalHighlights.length).toBe(0);
+    await waitForHighlighterPresence(page, 'test-input', { present: false });
 
     const browser = getBrowser();
     const extensionId = getExtensionId();
@@ -376,68 +392,14 @@ describe('Proofly proofreading', () => {
     );
     console.log({ badgeText });
     expect(badgeText === null || badgeText === '' || badgeText === ' ').toBe(true);
-  });
-
-  test('should only inject popover while issues exist', async () => {
-    await ensureAutoFixOnDoubleClick(page, false);
-
-    await page.goto('http://localhost:8080/test.html', { waitUntil: 'networkidle0' });
-
-    const initialPopoverPresent = await page.evaluate(() =>
-      Boolean(document.querySelector('proofly-correction-popover'))
-    );
-    expect(initialPopoverPresent).toBe(false);
-
-    await page.waitForSelector('#test-input', { timeout: 10000 });
-    await page.focus('#test-input');
-
-    await page.evaluate(() => {
-      const element = document.getElementById('test-input') as HTMLInputElement | null;
-      if (!element) {
-        return;
-      }
-      element.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-
-    let remainingHighlights = await waitForHighlightCount(page, 'test-input', (count) => count > 0);
-    expect(remainingHighlights).toBeGreaterThan(0);
 
     await page.waitForFunction(
-      () => Boolean(document.querySelector('proofly-correction-popover')),
+      () => {
+        const popover = document.querySelector('proofly-correction-popover');
+        return !popover;
+      },
       { timeout: 10000 }
     );
-
-    while (remainingHighlights > 0) {
-      const highlights = await collectHighlightDetails(page, 'test-input');
-      const targetHighlight = highlights[0];
-      if (!targetHighlight) {
-        break;
-      }
-
-      await clickHighlightDetail(page, targetHighlight);
-      await waitForPopoverOpen(page);
-
-      await page.evaluate(() => {
-        const popover = document.querySelector('proofly-correction-popover');
-        const applyButton = popover?.shadowRoot?.querySelector(
-          '.apply-button'
-        ) as HTMLButtonElement | null;
-        applyButton?.click();
-      });
-
-      await waitForPopoverClosed(page);
-
-      const previousCount = remainingHighlights;
-      remainingHighlights = await waitForHighlightCount(
-        page,
-        'test-input',
-        (count) => count < previousCount
-      );
-    }
-
-    await page.waitForFunction(() => !document.querySelector('proofly-correction-popover'), {
-      timeout: 10000,
-    });
   });
 
   test('should apply autofix on double-click when enabled', async () => {

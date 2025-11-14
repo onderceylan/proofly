@@ -43,6 +43,7 @@ export class TargetSession {
   private readonly debouncedNeedProofread: (value: string) => void;
 
   private attached = false;
+  private overlayMounted = false;
   private needsLayout = false;
   private needsValue = false;
   private needsRender = false;
@@ -167,6 +168,10 @@ export class TargetSession {
     this.mirror = createMirror(target);
     this.renderer = new UnderlineRenderer(this.overlay.elements.underlines);
     this.hooks = hooks ?? {};
+    this.overlay.elements.container.insertBefore(
+      this.mirror.element,
+      this.overlay.elements.underlines
+    );
     this.debouncedNeedProofread = debounce((value: string) => {
       this.hooks.onNeedProofread?.(value);
     }, PROOFREAD_DEBOUNCE_MS);
@@ -177,9 +182,7 @@ export class TargetSession {
       return;
     }
 
-    this.overlay.attach();
-    const { container, underlines } = this.overlay.elements;
-    container.insertBefore(this.mirror.element, underlines);
+    const { underlines } = this.overlay.elements;
 
     this.target.addEventListener('input', this.handleInput);
     this.target.addEventListener('scroll', this.handleScroll, {
@@ -226,7 +229,6 @@ export class TargetSession {
       return;
     }
     this.raf.cancel();
-    this.renderer.clear();
     this.activeIssueId = null;
     this.overlay.elements.underlines.removeEventListener('click', this.handleUnderlineClick);
     this.overlay.elements.underlines.removeEventListener(
@@ -242,7 +244,7 @@ export class TargetSession {
     this.mutationObserver?.disconnect();
     this.resizeObserver = null;
     this.mutationObserver = null;
-    this.overlay.detach();
+    this.detachOverlay();
     this.attached = false;
   }
 
@@ -250,6 +252,11 @@ export class TargetSession {
     this.issues = issues;
     if (this.activeIssueId && !issues.some((issue) => issue.id === this.activeIssueId)) {
       this.activeIssueId = null;
+    }
+    if (issues.length > 0) {
+      this.ensureOverlayMounted();
+    } else {
+      this.detachOverlay();
     }
     this.needsMeasurement = true;
     this.needsRender = true;
@@ -288,6 +295,10 @@ export class TargetSession {
       return;
     }
 
+    if (!this.overlayMounted) {
+      return;
+    }
+
     if (this.needsLayout) {
       this.syncLayout();
       this.needsLayout = false;
@@ -308,6 +319,28 @@ export class TargetSession {
       this.render();
       this.needsRender = false;
     }
+  }
+
+  private ensureOverlayMounted(): void {
+    if (this.overlayMounted) {
+      return;
+    }
+    this.overlay.attach();
+    this.overlayMounted = true;
+    this.needsLayout = true;
+    this.needsValue = true;
+    this.needsMeasurement = true;
+    this.needsRender = true;
+    this.raf.schedule();
+  }
+
+  private detachOverlay(): void {
+    if (!this.overlayMounted) {
+      return;
+    }
+    this.renderer.clear();
+    this.overlay.detach();
+    this.overlayMounted = false;
   }
 
   private syncLayout(): void {

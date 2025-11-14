@@ -41,7 +41,7 @@ export async function collectHighlightDetails(
       });
 
       if (!hostForField?.shadowRoot) {
-        return null;
+        return [];
       }
 
       const highlightNodes = Array.from(hostForField.shadowRoot.querySelectorAll('.u'));
@@ -177,6 +177,67 @@ export async function waitForHighlightCount(
   }
 
   throw new Error(`Highlight count did not satisfy predicate for ${fieldId}`);
+}
+
+interface HighlighterPresenceOptions {
+  present?: boolean;
+  timeout?: number;
+  tolerance?: number;
+  interval?: number;
+}
+
+export async function hasHighlighterHost(
+  page: Page,
+  fieldId: string,
+  tolerance = HOST_MATCH_TOLERANCE
+): Promise<boolean> {
+  return page.evaluate(
+    (id, tol) => {
+      const field = document.getElementById(id);
+      if (!(field instanceof HTMLElement)) {
+        return false;
+      }
+
+      const fieldRect = field.getBoundingClientRect();
+      const hosts = Array.from(document.querySelectorAll('proofly-highlighter'));
+      const match = hosts.find((host) => {
+        const rect = host.getBoundingClientRect();
+        return (
+          Math.abs(rect.left - fieldRect.left) <= tol && Math.abs(rect.top - fieldRect.top) <= tol
+        );
+      });
+
+      return Boolean(match);
+    },
+    fieldId,
+    tolerance
+  );
+}
+
+export async function waitForHighlighterPresence(
+  page: Page,
+  fieldId: string,
+  options: HighlighterPresenceOptions = {}
+): Promise<void> {
+  const {
+    present = true,
+    timeout = 10000,
+    tolerance = HOST_MATCH_TOLERANCE,
+    interval = 200,
+  } = options;
+  const deadline = Date.now() + timeout;
+
+  while (Date.now() < deadline) {
+    const hasHost = await hasHighlighterHost(page, fieldId, tolerance);
+    if (present ? hasHost : !hasHost) {
+      return;
+    }
+    await delay(interval);
+  }
+
+  throw new Error(
+    `Highlighter presence for ${fieldId} did not reach expected state: ${present ? 'present' : 'absent'}`
+  );
 }
 
 export async function countContentEditableHighlights(page: Page, fieldId: string): Promise<number> {
