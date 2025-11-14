@@ -111,3 +111,11 @@ export function computeLineHeight(target: HTMLElement, fallbackMultiplier = 1.2)
   }
   return value;
 }
+
+export function createUniqueId(prefix?: string): string {
+  const randomValue =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2, 10);
+  return prefix ? `${prefix}-${randomValue}` : randomValue;
+}

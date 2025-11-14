@@ -8,6 +8,7 @@ import { STORAGE_KEYS, STORAGE_DEFAULTS } from '../shared/constants.ts';
 import {
   buildCorrectionColorThemes,
   getActiveCorrectionColors,
+  getCorrectionTypeColor,
   setActiveCorrectionColors,
   type CorrectionColorConfig,
   type CorrectionColorThemeMap,
@@ -34,6 +35,7 @@ import {
   type Issue as SessionIssue,
   type IssueColorPalette,
 } from './target-session.ts';
+import { createUniqueId } from './utils.ts';
 import { isMacOS } from '../shared/utils/platform.ts';
 import {
   normalizeIssueLabel,
@@ -64,7 +66,7 @@ export class ProofreadingManager {
   private observer: MutationObserver | null = null;
   private activeElement: HTMLElement | null = null;
   private activeSessionElement: HTMLElement | null = null;
-  private readonly pageId = crypto.randomUUID();
+  private readonly pageId = createUniqueId('proofread-page');
   private readonly elementIds = new WeakMap<HTMLElement, string>();
   private readonly elementLookup = new Map<string, HTMLElement>();
   private readonly elementCorrections = new Map<HTMLElement, ProofreadCorrection[]>();
@@ -454,7 +456,7 @@ export class ProofreadingManager {
     corrections: ProofreadCorrection[]
   ): void {
     const session = this.ensureTargetSession(element);
-    const mapped = this.mapCorrectionsToIssues(corrections);
+    const mapped = this.mapCorrectionsToIssues(corrections, element.value ?? '');
     const lookup = new Map<string, ProofreadCorrection>();
     const issues: SessionIssue[] = [];
     for (const { issue, correction } of mapped) {
@@ -500,7 +502,8 @@ export class ProofreadingManager {
   }
 
   private mapCorrectionsToIssues(
-    corrections: ProofreadCorrection[]
+    corrections: ProofreadCorrection[],
+    elementText?: string
   ): Array<{ issue: SessionIssue; correction: ProofreadCorrection }> {
     return corrections
       .map((correction, index) => ({ correction, index }))
@@ -511,9 +514,37 @@ export class ProofreadingManager {
           start: correction.startIndex,
           end: correction.endIndex,
           type: this.toIssueType(correction),
+          label: this.buildIssueLabel(correction, elementText),
         },
         correction,
       }));
+  }
+
+  private buildIssueLabel(correction: ProofreadCorrection, elementText?: string): string {
+    const paletteEntry = getCorrectionTypeColor(correction.type);
+    const suggestionValue = correction.correction;
+
+    if (typeof suggestionValue === 'string') {
+      if (suggestionValue === ' ') {
+        return `${paletteEntry.label} suggestion: space character`;
+      }
+      if (suggestionValue === '') {
+        return `${paletteEntry.label} suggestion: remove highlighted text`;
+      }
+      if (suggestionValue.trim().length > 0) {
+        return `${paletteEntry.label} suggestion: ${suggestionValue.trim()}`;
+      }
+      return `${paletteEntry.label} suggestion: whitespace adjustment`;
+    }
+
+    if (elementText && elementText.length > 0) {
+      const originalText = this.extractOriginalText(elementText, correction).trim();
+      if (originalText.length > 0) {
+        return `${paletteEntry.label} issue: ${originalText}`;
+      }
+    }
+
+    return `${paletteEntry.label} suggestion`;
   }
 
   private buildIssueId(correction: ProofreadCorrection, index: number): string {
@@ -762,7 +793,7 @@ export class ProofreadingManager {
   private getElementId(element: HTMLElement): string {
     let identifier = this.elementIds.get(element);
     if (!identifier) {
-      identifier = crypto.randomUUID();
+      identifier = createUniqueId('element');
       this.elementIds.set(element, identifier);
       this.elementLookup.set(identifier, element);
     }
@@ -996,7 +1027,7 @@ export class ProofreadingManager {
       this.handleCorrectionFromPopover(element, applied);
     });
 
-    this.popover.show(x, y);
+    this.popover.show(x, y, { anchorElement: element });
   }
 
   private async initializeCorrectionPreferences(): Promise<void> {
@@ -1229,7 +1260,7 @@ export class ProofreadingManager {
     this.handleProofreadLifecycle({
       status: 'ignored',
       element,
-      executionId: crypto.randomUUID(),
+      executionId: createUniqueId('proofread'),
       textLength: this.getElementSnapshotText(element).length,
       reason,
     });

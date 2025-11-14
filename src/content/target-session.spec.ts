@@ -232,9 +232,12 @@ describe('TargetSession', () => {
     return false;
   }
 
-  it('attaches overlay and schedules initial frame', () => {
+  it('attaches overlay once issues are present and schedules initial frame', () => {
     const session = createSession();
     session.attach();
+    session.setIssues([
+      { id: 'attach-1', start: 0, end: 3, type: 'spelling', label: 'Attachment label' },
+    ]);
 
     expect(overlayInstance.attach).toHaveBeenCalled();
     expect(target.addEventListener).toHaveBeenCalledWith('input', expect.any(Function));
@@ -257,7 +260,9 @@ describe('TargetSession', () => {
   it('renders issues via renderer after measurement flush', () => {
     const session = createSession();
     session.attach();
-    const issues: Issue[] = [{ id: 'iss-1', start: 0, end: 5, type: 'spelling' }];
+    const issues: Issue[] = [
+      { id: 'iss-1', start: 0, end: 5, type: 'spelling', label: 'Spelling suggestion' },
+    ];
     session.setIssues(issues);
 
     (session as any).flushFrame();
@@ -270,7 +275,9 @@ describe('TargetSession', () => {
   it('invokes underline click hooks with computed rect', () => {
     const session = createSession();
     session.attach();
-    session.setIssues([{ id: 'iss-1', start: 0, end: 5, type: 'spelling' }]);
+    session.setIssues([
+      { id: 'iss-1', start: 0, end: 5, type: 'spelling', label: 'Spelling suggestion' },
+    ]);
 
     triggerUnderline('click', {
       target: {
@@ -283,10 +290,35 @@ describe('TargetSession', () => {
     expect(hooks.onUnderlineClick).toHaveBeenCalledWith('iss-1', expect.any(DOMRect));
   });
 
+  it('activates underline issues via keyboard events', () => {
+    const session = createSession();
+    session.attach();
+    session.setIssues([
+      { id: 'kbd-1', start: 0, end: 4, type: 'spelling', label: 'Keyboard suggestion' },
+    ]);
+
+    const keydownHandler = underlineListeners.get('keydown');
+    expect(keydownHandler).toBeDefined();
+
+    keydownHandler?.({
+      key: 'Enter',
+      preventDefault: vi.fn(),
+      target: {
+        classList: { contains: (value: string) => value === 'u' },
+        dataset: { issueId: 'kbd-1' },
+        getBoundingClientRect: () => new DOMRect(5, 6, 10, 4),
+      },
+    } as unknown as KeyboardEvent);
+
+    expect(hooks.onUnderlineClick).toHaveBeenCalledWith('kbd-1', expect.any(DOMRect));
+  });
+
   it('handles double click autofix when enabled', () => {
     const session = createSession();
     session.attach();
-    const issues: Issue[] = [{ id: 'fix-1', start: 0, end: 4, type: 'spelling' }];
+    const issues: Issue[] = [
+      { id: 'fix-1', start: 0, end: 4, type: 'spelling', label: 'Spelling suggestion' },
+    ];
     session.setIssues(issues);
     session.setAutofixOnDoubleClick(true);
 
@@ -304,6 +336,9 @@ describe('TargetSession', () => {
   it('detaches overlay and cleans up listeners', () => {
     const session = createSession();
     session.attach();
+    session.setIssues([
+      { id: 'detach-1', start: 0, end: 3, type: 'spelling', label: 'Detach label' },
+    ]);
     session.detach();
 
     expect(rafInstance.cancel).toHaveBeenCalled();

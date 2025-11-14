@@ -12,6 +12,7 @@ export interface UnderlineDescriptor {
   type: IssueType;
   rectIndex: number;
   rect: DOMRect;
+  label: string;
 }
 
 export interface RenderOptions {
@@ -86,11 +87,16 @@ export class UnderlineRenderer {
       element.style.setProperty('--fill-color', paletteEntry.background);
       element.dataset.underlineStyle = options.underlineStyle;
       element.dataset.type = descriptor.type;
-      if (descriptor.issueId === options.activeIssueId) {
+      const isActive = descriptor.issueId === options.activeIssueId;
+      if (isActive) {
         element.dataset.active = 'true';
       } else {
         delete element.dataset.active;
       }
+      element.setAttribute('role', 'button');
+      element.tabIndex = 0;
+      element.setAttribute('aria-label', descriptor.label);
+      element.setAttribute('aria-pressed', isActive ? 'true' : 'false');
     }
 
     for (const [key, element] of this.elements) {

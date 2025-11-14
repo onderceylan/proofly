@@ -1,6 +1,7 @@
 import { debounce, type DebouncedFunction } from '../utils/debounce.ts';
 import { undoManager } from '../utils/undo-manager.ts';
 import { replaceTextWithUndo } from '../utils/clipboard.ts';
+import { createUniqueId } from '../../content/utils.ts';
 import type { ProofreadCorrection, ProofreadResult } from '../types.ts';
 import type { ProofreadingTarget, ProofreadingTargetHooks } from './types.ts';
 import type { ProofreadLifecycleReason, ProofreadLifecycleStatus } from './control-events.ts';
@@ -72,6 +73,8 @@ const defaultGetElementText = (element: HTMLElement): string => {
 const isSameCorrection = (a: ProofreadCorrection, b: ProofreadCorrection): boolean =>
   a.startIndex === b.startIndex && a.endIndex === b.endIndex && a.correction === b.correction;
 
+const newExecutionId = (): string => createUniqueId();
+
 export class ProofreadingController {
   private readonly states = new Map<HTMLElement, ElementState>();
   private readonly runProofread: ProofreadingControllerDependencies['runProofread'];
@@ -140,7 +143,7 @@ export class ProofreadingController {
       this.reportLifecycle?.({
         status: 'throttled',
         element,
-        executionId: crypto.randomUUID(),
+        executionId: newExecutionId(),
         textLength: this.getElementText(element).length,
         reason: 'missing-state',
       });
@@ -151,7 +154,7 @@ export class ProofreadingController {
       this.reportLifecycle?.({
         status: 'throttled',
         element,
-        executionId: crypto.randomUUID(),
+        executionId: newExecutionId(),
         textLength: this.getElementText(element).length,
         reason: 'applying-correction',
       });
@@ -162,7 +165,7 @@ export class ProofreadingController {
       this.reportLifecycle?.({
         status: 'throttled',
         element,
-        executionId: crypto.randomUUID(),
+        executionId: newExecutionId(),
         textLength: this.getElementText(element).length,
         reason: 'restoring-from-history',
       });
@@ -188,7 +191,7 @@ export class ProofreadingController {
     const selectionRange = this.clampSelectionRange(options.selection, text.length);
     const hasSelection = selectionRange !== null;
     const textLength = hasSelection ? selectionRange.end - selectionRange.start : text.length;
-    const executionId = crypto.randomUUID();
+    const executionId = newExecutionId();
     const forced = Boolean(options.force);
 
     this.reportLifecycle?.({

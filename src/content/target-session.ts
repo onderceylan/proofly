@@ -14,6 +14,7 @@ export type Issue = {
   start: number;
   end: number;
   type: IssueType;
+  label: string;
 };
 
 export type IssueColorPalette = CorrectionColorThemeMap;
@@ -117,20 +118,7 @@ export class TargetSession {
     if (!node || !node.classList.contains('u')) {
       return;
     }
-    const issueId = node.dataset.issueId;
-    if (!issueId) {
-      return;
-    }
-    const rect = node.getBoundingClientRect();
-    const rectHeightCorrection = 10;
-    const pageRect = new DOMRect(
-      rect.left,
-      rect.top + rectHeightCorrection,
-      rect.width,
-      rect.height
-    );
-    this.setActiveIssue(issueId);
-    this.hooks.onUnderlineClick(issueId, pageRect);
+    this.activateIssueFromNode(node);
   };
 
   private readonly handleUnderlineDoubleClick = (event: MouseEvent) => {
@@ -159,6 +147,45 @@ export class TargetSession {
 
     this.hooks.onUnderlineDoubleClick(issueId, issue);
   };
+
+  private readonly handleUnderlineKeyDown = (event: KeyboardEvent) => {
+    if (this.autofixOnDoubleClick) {
+      return;
+    }
+
+    const node = event.target as HTMLElement | null;
+    if (!node || !node.classList.contains('u')) {
+      return;
+    }
+
+    if (event.key !== 'Enter' && event.key !== ' ') {
+      return;
+    }
+
+    event.preventDefault();
+    this.activateIssueFromNode(node);
+  };
+
+  private activateIssueFromNode(node: HTMLElement): void {
+    if (!this.hooks.onUnderlineClick) {
+      return;
+    }
+
+    const issueId = node.dataset.issueId;
+    if (!issueId) {
+      return;
+    }
+    const rect = node.getBoundingClientRect();
+    const rectHeightCorrection = 10;
+    const pageRect = new DOMRect(
+      rect.left,
+      rect.top + rectHeightCorrection,
+      rect.width,
+      rect.height
+    );
+    this.setActiveIssue(issueId);
+    this.hooks.onUnderlineClick(issueId, pageRect);
+  }
 
   constructor(
     private readonly target: HTMLTextAreaElement | HTMLInputElement,
@@ -193,6 +220,7 @@ export class TargetSession {
     underlines.addEventListener('wheel', this.handleOverlayWheel, {
       passive: false,
     });
+    underlines.addEventListener('keydown', this.handleUnderlineKeyDown);
     window.addEventListener('scroll', this.handleWindowScroll, true);
     window.addEventListener('resize', this.handleWindowResize);
 
@@ -236,6 +264,7 @@ export class TargetSession {
       this.handleUnderlineDoubleClick
     );
     this.overlay.elements.underlines.removeEventListener('wheel', this.handleOverlayWheel);
+    this.overlay.elements.underlines.removeEventListener('keydown', this.handleUnderlineKeyDown);
     this.target.removeEventListener('input', this.handleInput);
     this.target.removeEventListener('scroll', this.handleScroll);
     window.removeEventListener('scroll', this.handleWindowScroll, true);
@@ -404,6 +433,7 @@ export class TargetSession {
           type: issue.type,
           rectIndex: index,
           rect: overlayRect,
+          label: issue.label,
         });
         index += 1;
       }

@@ -13,6 +13,8 @@ class MockDiv {
   children: MockDiv[] = [];
   style: MockStyle = new MockStyle() as MockStyle;
   dataset: Record<string, string> = {};
+  attributes: Record<string, string> = {};
+  tabIndex = -1;
   constructor(public className = '') {}
   appendChild(node: MockDiv) {
     this.children.push(node);
@@ -25,6 +27,12 @@ class MockDiv {
   }
   remove() {
     this.parent?.removeChild(this);
+  }
+  setAttribute(name: string, value: string) {
+    this.attributes[name] = value;
+  }
+  removeAttribute(name: string) {
+    delete this.attributes[name];
   }
   parent?: MockDiv;
 }
@@ -71,6 +79,7 @@ describe('UnderlineRenderer', () => {
       type: 'spelling',
       rectIndex: 0,
       rect,
+      label: `Label for ${key}`,
     };
   }
 
@@ -143,6 +152,33 @@ describe('UnderlineRenderer', () => {
     expect(container.children).toHaveLength(1);
     expect(container.children[0].dataset.underlineStyle).toBe('dotted');
     expect(container.children[0].dataset.active).toBeUndefined();
+  });
+
+  it('adds accessibility metadata to underline elements', () => {
+    const renderer = new UnderlineRenderer(container as unknown as HTMLElement);
+    const issue = descriptor('issue-a', new DOMRect(0, 0, 30, 5));
+
+    renderer.render([issue], {
+      paddingLeft: 0,
+      paddingRight: 0,
+      paddingTop: 0,
+      paddingBottom: 0,
+      scrollLeft: 0,
+      scrollTop: 0,
+      clientWidth: 200,
+      clientHeight: 200,
+      lineHeight: 16,
+      margin: 10,
+      activeIssueId: 'issue-a',
+      palette,
+      underlineStyle: 'solid',
+    });
+
+    const node = container.children[0];
+    expect(node.attributes.role).toBe('button');
+    expect(node.attributes['aria-label']).toBe('Label for issue-a');
+    expect(node.attributes['aria-pressed']).toBe('true');
+    expect(node.tabIndex).toBe(0);
   });
 
   it('clears all underline nodes when requested', () => {

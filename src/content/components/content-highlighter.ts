@@ -247,7 +247,7 @@ export class ContentHighlighter {
     const y = correctionRect ? correctionRect.bottom + 8 : event.clientY + 20;
 
     logger.info({ x, y }, 'Showing popover at');
-    this.popover.show(x, y);
+    this.popover.show(x, y, { anchorElement: element });
   }
 
   private handleElementDoubleClick(element: HTMLElement, event: MouseEvent): void {

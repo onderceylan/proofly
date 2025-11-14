@@ -13,6 +13,7 @@ export class ShadowOverlay {
 
   constructor(private readonly target: HTMLTextAreaElement | HTMLInputElement) {
     const host = document.createElement('proofly-highlighter');
+    host.setAttribute('role', 'presentation');
     host.style.position = 'absolute';
     host.style.pointerEvents = 'none';
     host.style.overflow = 'hidden';

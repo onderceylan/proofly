@@ -12,6 +12,7 @@ import {
 import { STORAGE_KEYS, STORAGE_DEFAULTS } from '../shared/constants.ts';
 import { ContentHighlighter } from '../content/components/content-highlighter.ts';
 import type { CorrectionPopover } from '../content/components/correction-popover.ts';
+import { createUniqueId } from '../content/utils.ts';
 import {
   createProofreader,
   createProofreaderAdapter,
@@ -743,8 +744,8 @@ async function setupLiveTestArea(
   const editor = document.getElementById('liveTestEditor');
   if (!editor) return null;
 
-  const pageId = crypto.randomUUID();
-  const elementId = crypto.randomUUID();
+  const pageId = createUniqueId('options-page');
+  const elementId = createUniqueId('options-element');
   let issuesRevision = 0;
   let activeProofreadingCount = 0;
   const issueLookup = new Map<string, ProofreadCorrection>();

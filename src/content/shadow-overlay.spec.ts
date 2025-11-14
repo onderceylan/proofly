@@ -17,6 +17,7 @@ class MockElement {
   shadowRoot: { children: unknown[]; append: (...nodes: unknown[]) => void } | null = null;
   textContent = '';
   dataset: Record<string, string> = {};
+  private attributes = new Map<string, string>();
   private rect: DOMRect = new DOMRect(0, 0, 0, 0);
 
   constructor(public tagName: string) {}
@@ -67,6 +68,14 @@ class MockElement {
       this.parent.removeChild(this);
     }
     this.parent = null;
+  }
+
+  setAttribute(name: string, value: string) {
+    this.attributes.set(name, value);
+  }
+
+  getAttribute(name: string) {
+    return this.attributes.get(name) ?? null;
   }
 }
 

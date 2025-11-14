@@ -1,6 +1,13 @@
 import { getCorrectionTypeColor } from '../../shared/utils/correction-types.ts';
+import { createUniqueId } from '../utils.ts';
+
+type AnchorState = {
+  owns: string | null;
+  controls: string | null;
+};
 
 export class CorrectionPopover extends HTMLElement {
+  private readonly internals: ElementInternals | null;
   private contentElement: HTMLDivElement | null = null;
   private currentCorrection: ProofreadCorrection | null = null;
   private issueText: string = '';
@@ -9,15 +16,46 @@ export class CorrectionPopover extends HTMLElement {
   private keydownHandler: ((e: KeyboardEvent) => void) | null = null;
   private isAnimating: boolean = false;
   private hideTimeoutId: number | null = null;
+  private anchorElement: HTMLElement | null = null;
+  private readonly anchorAriaCache = new WeakMap<HTMLElement, AnchorState>();
+  private popoverId: string;
+  private suggestionElementId: string;
 
   constructor() {
     super();
+    this.internals = tryAttachInternals(this);
     this.attachShadow({ mode: 'open' });
+    this.popoverId = createUniqueId('popover');
+    this.suggestionElementId = `${this.popoverId}-suggestion`;
   }
 
   connectedCallback() {
+    if (!this.id) {
+      this.id = this.popoverId;
+    } else {
+      this.popoverId = this.id;
+      this.suggestionElementId = `${this.popoverId}-suggestion`;
+    }
     this.setAttribute('popover', 'manual');
+    this.setAttribute('tabindex', '-1');
+    this.applyBaseAriaAttributes();
     this.render();
+  }
+
+  disconnectedCallback() {
+    this.restoreAnchorElement();
+  }
+
+  private applyBaseAriaAttributes(): void {
+    if (this.internals) {
+      this.internals.role = 'dialog';
+      this.internals.ariaLive = 'assertive';
+      this.internals.ariaModal = 'false';
+    } else {
+      this.setAttribute('role', 'dialog');
+      this.setAttribute('aria-live', 'assertive');
+      this.setAttribute('aria-modal', 'false');
+    }
   }
 
   setCorrection(
@@ -31,7 +69,8 @@ export class CorrectionPopover extends HTMLElement {
     this.updateContent();
   }
 
-  show(x: number, y: number): void {
+  show(x: number, y: number, options?: { anchorElement?: HTMLElement }): void {
+    this.setAnchorElement(options?.anchorElement ?? null);
     // Cancel any pending hide animation
     if (this.hideTimeoutId !== null) {
       clearTimeout(this.hideTimeoutId);
@@ -41,6 +80,7 @@ export class CorrectionPopover extends HTMLElement {
 
     // Show popover first to get its dimensions
     this.showPopover();
+    this.focus({ preventScroll: true });
 
     // Get popover dimensions
     const rect = this.getBoundingClientRect();
@@ -123,6 +163,7 @@ export class CorrectionPopover extends HTMLElement {
       const animationDuration = 100; // matches fadeOut duration
       this.hideTimeoutId = window.setTimeout(() => {
         this.hidePopover();
+        this.restoreAnchorElement();
         this.isAnimating = false;
         this.hideTimeoutId = null;
         this.dispatchEvent(new CustomEvent('proofly:popover-hide'));
@@ -130,6 +171,7 @@ export class CorrectionPopover extends HTMLElement {
     } else {
       // No animation, hide immediately
       this.hidePopover();
+      this.restoreAnchorElement();
       this.dispatchEvent(new CustomEvent('proofly:popover-hide'));
     }
   }
@@ -156,7 +198,10 @@ export class CorrectionPopover extends HTMLElement {
       </div>
       <div class="correction-body">
         <div class="correction-suggestion">
-          <strong>Suggestion:</strong> <span id="suggestion">${suggestionDisplay}</span>
+          <strong>Suggestion:</strong> <span
+            id="${this.suggestionElementId}"
+            data-role="suggestion-text"
+          >${suggestionDisplay}</span>
         </div>
         ${
           this.currentCorrection.explanation
@@ -189,6 +234,110 @@ export class CorrectionPopover extends HTMLElement {
         this.hide();
       });
     }
+
+    const suggestionElement = content.querySelector(
+      '[data-role="suggestion-text"]'
+    ) as HTMLElement | null;
+    this.applyAccessibleMetadata(this.buildAriaLabel(colors.label), suggestionElement);
+  }
+
+  private applyAccessibleMetadata(label: string, descriptionElement: HTMLElement | null): void {
+    const internals = this.internals;
+    if (internals) {
+      internals.ariaLabel = label;
+      if ('ariaDescribedByElements' in internals) {
+        (internals as unknown as { ariaDescribedByElements: Element[] }).ariaDescribedByElements =
+          descriptionElement ? [descriptionElement] : [];
+        return;
+      }
+    }
+
+    this.setAttribute('aria-label', label);
+    if (descriptionElement) {
+      descriptionElement.id = this.suggestionElementId;
+      this.setAttribute('aria-describedby', this.suggestionElementId);
+    } else {
+      this.removeAttribute('aria-describedby');
+    }
+  }
+
+  private buildAriaLabel(typeLabel: string): string {
+    const suggestion = this.getAccessibleSuggestionText();
+    if (suggestion) {
+      return `${typeLabel} suggestion: ${suggestion}`;
+    }
+    return `${typeLabel} suggestion`;
+  }
+
+  private getAccessibleSuggestionText(): string | null {
+    const value = this.currentCorrection?.correction;
+    if (typeof value === 'string') {
+      if (value === ' ') {
+        return 'space character';
+      }
+      if (value === '') {
+        return 'remove highlighted text';
+      }
+      if (value.trim().length === 0) {
+        return 'whitespace adjustment';
+      }
+      return value.trim();
+    }
+
+    const trimmedIssue = this.issueText.trim();
+    if (trimmedIssue.length > 0) {
+      return trimmedIssue;
+    }
+    return null;
+  }
+
+  private setAnchorElement(element: HTMLElement | null): void {
+    if (this.anchorElement === element) {
+      return;
+    }
+
+    this.restoreAnchorElement();
+
+    if (!element) {
+      return;
+    }
+
+    if (!this.anchorAriaCache.has(element)) {
+      this.anchorAriaCache.set(element, {
+        owns: element.getAttribute('aria-owns'),
+        controls: element.getAttribute('aria-controls'),
+      });
+    }
+
+    const popoverId = this.id || this.popoverId;
+    element.setAttribute('aria-owns', mergeIds(element.getAttribute('aria-owns'), popoverId));
+    element.setAttribute(
+      'aria-controls',
+      mergeIds(element.getAttribute('aria-controls'), popoverId)
+    );
+    this.anchorElement = element;
+  }
+
+  private restoreAnchorElement(): void {
+    if (!this.anchorElement) {
+      return;
+    }
+
+    const cached = this.anchorAriaCache.get(this.anchorElement);
+    if (cached?.owns) {
+      this.anchorElement.setAttribute('aria-owns', cached.owns);
+    } else {
+      this.anchorElement.removeAttribute('aria-owns');
+    }
+
+    if (cached?.controls) {
+      this.anchorElement.setAttribute('aria-controls', cached.controls);
+    } else {
+      this.anchorElement.removeAttribute('aria-controls');
+    }
+
+    this.anchorAriaCache.delete(this.anchorElement);
+    this.anchorElement = null;
   }
 
   private formatSuggestion(suggestion: string, issueText: string): string {
@@ -402,3 +551,28 @@ export class CorrectionPopover extends HTMLElement {
 }
 
 customElements.define('proofly-correction-popover', CorrectionPopover);
+
+function mergeIds(existing: string | null, id: string): string {
+  const values = new Set<string>();
+  if (existing) {
+    for (const value of existing.split(/\s+/)) {
+      if (value) {
+        values.add(value);
+      }
+    }
+  }
+  values.add(id);
+  return Array.from(values).join(' ');
+}
+
+function tryAttachInternals(element: HTMLElement): ElementInternals | null {
+  if (typeof element.attachInternals !== 'function') {
+    return null;
+  }
+
+  try {
+    return element.attachInternals();
+  } catch (_error) {
+    return null;
+  }
+}
