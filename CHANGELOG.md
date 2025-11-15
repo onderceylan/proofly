@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.4.0](https://github.com/onderceylan/proofly/compare/v0.3.1...v0.4.0) (2025-11-15)
+
+
+### Features
+
+* proofread ignored element with the manual trigger ([f540316](https://github.com/onderceylan/proofly/commit/f540316ea000f3ea38b0883bba4124c1a11ef87c))
+
+
+### Bug Fixes
+
+* handle observing rich text editors elements ([d89c38b](https://github.com/onderceylan/proofly/commit/d89c38ba984900f87544001e334374769e1cd214))
+* handle removed nodes mutation ([#8](https://github.com/onderceylan/proofly/issues/8)) ([e28d853](https://github.com/onderceylan/proofly/commit/e28d853a703031a570c5fd46d60fb86e23e80205))
+* optimize element injection ([#9](https://github.com/onderceylan/proofly/issues/9)) ([5774ae8](https://github.com/onderceylan/proofly/commit/5774ae8f6805ad6bd60145505221575e4737b5bc))
+
+
+### Tests
+
+* update formatting ([da0c8c7](https://github.com/onderceylan/proofly/commit/da0c8c75bf5162075fd486f810f470b3df84384f))
+
 ## [0.3.1](https://github.com/onderceylan/proofly/compare/v0.3.0...v0.3.1) (2025-11-11)
 
 
