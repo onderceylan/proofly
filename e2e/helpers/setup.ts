@@ -141,6 +141,7 @@ afterAll(async () => {
 
   if (globalBrowser) {
     try {
+      console.log('Writing logs to e2e/logs.txt');
       await writeExtensionLogsToFile(globalBrowser, EXTENSION_ID, {
         targetUrl: 'http://localhost:8080/test.html',
       });
