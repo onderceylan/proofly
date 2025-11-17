@@ -10,7 +10,7 @@ const generateSessionId = (): string => {
 const sessionId = generateSessionId();
 
 interface DevLogEntry {
-  t: number;
+  t: number | string;
   ctx: string;
   level: string;
   msg: string[];
@@ -105,8 +105,21 @@ const devLogSink = (logEvent: Record<string, any>): void => {
     delete structuredData.level;
     delete structuredData.ts;
 
+    const timestampSource = logEvent.ts;
+    const numericTimestamp =
+      typeof timestampSource === 'number'
+        ? timestampSource
+        : typeof timestampSource === 'string'
+          ? Number(timestampSource)
+          : Number.NaN;
+    const parsedTimestamp = Number.isFinite(numericTimestamp)
+      ? numericTimestamp
+      : typeof timestampSource === 'string'
+        ? Date.parse(timestampSource)
+        : Number.NaN;
+
     const entry: DevLogEntry = {
-      t: Number(logEvent.ts),
+      t: Number.isFinite(parsedTimestamp) ? parsedTimestamp : String(timestampSource ?? ''),
       ctx: logEvent.bindings?.[0]?.context || 'unknown',
       level: logEvent.level?.label ?? 'info',
       msg: Array.isArray(logEvent.messages)

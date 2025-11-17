@@ -2,12 +2,14 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { Browser } from 'puppeteer-core';
 
+type ExtensionTimestamp = number | string;
+
 interface ExtensionLog {
   ctx: string;
   level: string;
   msg: unknown[];
   sid: string;
-  t: string;
+  t: ExtensionTimestamp;
 }
 
 interface FetchLogParams {
@@ -24,8 +26,34 @@ const DEFAULT_FETCH_PARAMS: FetchLogParams = {
   logLevel: 'all',
 };
 
+function toTimestampMillis(value: ExtensionTimestamp): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const numericValue = Number(value);
+    if (!Number.isNaN(numericValue)) {
+      return numericValue;
+    }
+
+    const parsed = Date.parse(value);
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
 function formatLog(log: ExtensionLog): string {
-  const timestamp = new Date(log.t).toISOString();
+  const timestampValue = toTimestampMillis(log.t);
+  const timestamp =
+    timestampValue !== null
+      ? new Date(timestampValue).toISOString()
+      : typeof log.t === 'string'
+        ? log.t
+        : 'unknown';
   const level = log.level.toUpperCase();
   const context = log.ctx;
   const message = Array.isArray(log.msg) ? log.msg.join(' ') : String(log.msg);

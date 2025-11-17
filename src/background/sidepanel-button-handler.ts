@@ -7,6 +7,7 @@ const openSidepanelTabs = new Set<number>();
 
 chrome.sidePanel.onOpened.addListener((info: PanelOpenedInfo) => {
   openSidepanelTabs.add(Number(info.tabId));
+  logger.info({ info }, 'Sidepanel opened');
 });
 
 export function getSenderOrPayloadTabId(
@@ -46,6 +47,7 @@ export function handleSidepanelToggleEvent(
   message: DevOpenSidepanelMessage
 ) {
   if (!chrome?.sidePanel?.setOptions || !chrome.sidePanel.open) {
+    logger.warn('Sidepanel API unavailable for dev helper preparation');
     sendResponse({ success: false, reason: 'unsupported' });
     return false;
   }
@@ -89,6 +91,8 @@ export function handleSidepanelToggleEvent(
 
     return true;
   }
+
+  logger.info({ tabId, action }, 'Dev helper toggling sidepanel');
 
   chrome.sidePanel
     .setOptions({

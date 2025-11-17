@@ -74,6 +74,7 @@ export class ProoflySidepanelToggleButton extends HTMLElement {
 
     this.button.disabled = true;
     try {
+      logger.info('Dev sidepanel toggle button clicked');
       await chrome.runtime.sendMessage({
         type: 'proofly:open-sidepanel-dev',
         payload: { action: 'toggle' },

@@ -1,4 +1,5 @@
-import type { Page } from 'puppeteer-core';
+import type { Browser, Page, WebWorker } from 'puppeteer-core';
+import { DEV_SIDE_PANEL_BUTTON_ID } from '../../src/content/dev-sidepanel-button.ts';
 
 export interface HighlightDetail {
   issueId: string;
@@ -352,6 +353,173 @@ export async function getPageBadgeCount(
   return badgeText ?? null;
 }
 
+export interface TabInfo {
+  tabId: number;
+  windowId?: number;
+}
+
+export async function getTabInfoForUrl(
+  browser: Browser,
+  extensionId: string,
+  targetUrl: string
+): Promise<TabInfo | null> {
+  const page = await browser.newPage();
+  await page.goto(`chrome-extension://${extensionId}/src/options/index.html`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  const info = (await page.evaluate(async (url) => {
+    const tabs = await chrome.tabs.query({ url });
+    const target = tabs[0];
+    if (!target?.id) {
+      return null;
+    }
+
+    return {
+      tabId: target.id,
+      windowId: target.windowId,
+    } satisfies TabInfo;
+  }, targetUrl)) as TabInfo | null;
+
+  await page.close();
+  return info;
+}
+
+async function getExtensionServiceWorker(
+  browser: Browser,
+  extensionId: string
+): Promise<WebWorker> {
+  const existingTarget = browser
+    .targets()
+    .find(
+      (target) =>
+        target.type() === 'service_worker' &&
+        target.url().startsWith(`chrome-extension://${extensionId}/`)
+    );
+
+  const serviceWorkerTarget =
+    existingTarget ??
+    (await browser.waitForTarget(
+      (target) =>
+        target.type() === 'service_worker' &&
+        target.url().startsWith(`chrome-extension://${extensionId}/`),
+      { timeout: 10000 }
+    ));
+
+  if (!serviceWorkerTarget) {
+    throw new Error('Failed to locate extension service worker');
+  }
+
+  const worker = await serviceWorkerTarget.worker();
+  if (!worker) {
+    throw new Error('Failed to connect to extension service worker');
+  }
+
+  return worker;
+}
+
+export async function waitForSidepanelPage(browser: Browser, _extensionId: string): Promise<Page> {
+  const existingTarget = browser
+    .targets()
+    .find((target) => target.url().includes('sidepanel/index.html'));
+
+  const sidepanelTarget =
+    existingTarget ??
+    (await browser.waitForTarget((target) => target.url().includes('sidepanel/index.html'), {
+      timeout: 10000,
+    }));
+
+  if (!sidepanelTarget) {
+    throw new Error('Failed to locate sidepanel target');
+  }
+
+  const targetInfo = (sidepanelTarget as unknown as { _targetInfo?: { type?: string } })
+    ._targetInfo;
+  if (targetInfo) {
+    targetInfo.type = 'page';
+  }
+
+  const sidepanelPage = await sidepanelTarget.asPage();
+  if (!sidepanelPage) {
+    throw new Error('Failed to attach to sidepanel page');
+  }
+
+  await sidepanelPage.waitForSelector('prfly-issues-panel', { timeout: 10000 });
+  return sidepanelPage;
+}
+
+export async function closeSidepanelForTab(
+  browser: Browser,
+  extensionId: string,
+  tabId: number
+): Promise<void> {
+  const worker = await getExtensionServiceWorker(browser, extensionId);
+
+  await worker.evaluate(
+    async ({ targetTabId }) => {
+      if (!chrome?.sidePanel) {
+        return;
+      }
+
+      const closeFn = (
+        chrome.sidePanel as typeof chrome.sidePanel & {
+          close?: (options: { tabId: number }) => Promise<void>;
+        }
+      ).close;
+
+      if (!closeFn) {
+        return;
+      }
+
+      await closeFn({ tabId: targetTabId });
+    },
+    { targetTabId: tabId }
+  );
+}
+
+export async function waitForProofreadingComplete(page: Page) {
+  return page.waitForFunction(
+    () => {
+      const globalWindow = window as unknown as {
+        __prooflyControlEvents?: Array<Record<string, any>>;
+      };
+      const events = globalWindow.__prooflyControlEvents || [];
+      return events.some((event) => event?.status === 'complete');
+    },
+    { timeout: 10000 }
+  );
+}
+
+export async function getSidebarIssueCount(sidebarPage: Page) {
+  const sidebarIssueCount = await sidebarPage.evaluate(() => {
+    const panel = document.querySelector('prfly-issues-panel');
+    const badge = panel?.shadowRoot?.querySelector('.issue__count');
+    const value = Number.parseInt(badge?.textContent?.trim() ?? '', 10);
+    return Number.isFinite(value) ? value : 0;
+  });
+  return sidebarIssueCount;
+}
+
+export async function getSidebarIssueCardsCount(sidebarPage: Page) {
+  return await sidebarPage.evaluate(() => {
+    const panel = document.querySelector('prfly-issues-panel');
+    return panel?.shadowRoot?.querySelectorAll('.issue').length ?? 0;
+  });
+}
+
+export async function waitForSidebarIssueCount(sidebarPage: Page, totalHighlights: number) {
+  await sidebarPage.waitForFunction(
+    (expected) => {
+      const panel = document.querySelector('prfly-issues-panel');
+      const badge = panel?.shadowRoot?.querySelector('.issue__count');
+      const value = Number.parseInt(badge?.textContent?.trim() ?? '', 10);
+      return Number.isFinite(value) && value === expected;
+    },
+    { timeout: 10000 },
+    totalHighlights
+  );
+}
+
 export async function hasMirrorOverlay(page: Page): Promise<boolean> {
   return page.evaluate(() => {
     const highlighter = document.querySelector('proofly-highlighter');
@@ -422,4 +590,30 @@ export async function getImmediateHighlightCount(page: Page, fieldId: string): P
 
     return hostForField.shadowRoot.querySelectorAll('.u').length;
   }, fieldId);
+}
+
+export async function toggleDevSidepanelButton(page: Page): Promise<void> {
+  await page.waitForSelector(`#${DEV_SIDE_PANEL_BUTTON_ID}`, { timeout: 10000 });
+  await page.waitForFunction(
+    (buttonId) => {
+      const host = document.getElementById(buttonId);
+      return Boolean(host?.shadowRoot?.querySelector('button'));
+    },
+    { timeout: 10000 },
+    DEV_SIDE_PANEL_BUTTON_ID
+  );
+
+  await page.evaluate((buttonId) => {
+    const host = document.getElementById(buttonId);
+    if (!host?.shadowRoot) {
+      throw new Error('Dev sidepanel button missing shadow root');
+    }
+
+    const button = host.shadowRoot.querySelector<HTMLButtonElement>('button');
+    if (!button) {
+      throw new Error('Dev sidepanel toggle button not found');
+    }
+
+    button.click();
+  }, DEV_SIDE_PANEL_BUTTON_ID);
 }
