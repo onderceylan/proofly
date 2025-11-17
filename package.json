@@ -20,7 +20,7 @@
   },
   "devDependencies": {
     "@crxjs/vite-plugin": "^2.0.3",
-    "@types/chrome": "^0.1.1",
+    "@types/chrome": "^0.1.29",
     "@types/dom-chromium-ai": "^0.0.10",
     "@types/node": "^24.9.2",
     "eslint": "^9.39.1",

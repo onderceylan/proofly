@@ -1,79 +1,17 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { normalizeIssueLabel, resolveElementKind, toSidepanelIssue } from './issues.ts';
-
-class MockDocument {
-  private elements = new Map<string, MockHTMLElement>();
-
-  register(element: MockHTMLElement) {
-    if (element.id) {
-      this.elements.set(element.id, element);
-    }
-    element.ownerDocument = this as unknown as Document;
-  }
-
-  getElementById(id: string): MockHTMLElement | null {
-    return this.elements.get(id) ?? null;
-  }
-}
-
-class MockHTMLElement {
-  tagName: string;
-  textContent: string | null = null;
-  parentElement: MockHTMLElement | null = null;
-  ownerDocument: Document | null = null;
-  id = '';
-  attributes = new Map<string, string>();
-
-  constructor(tagName: string) {
-    this.tagName = tagName.toUpperCase();
-  }
-
-  appendChild(child: MockHTMLElement) {
-    child.parentElement = this;
-    if (child.id && this.ownerDocument) {
-      (this.ownerDocument as unknown as MockDocument).register(child);
-    }
-  }
-
-  setAttribute(name: string, value: string) {
-    this.attributes.set(name, value);
-  }
-
-  getAttribute(name: string) {
-    return this.attributes.get(name) ?? null;
-  }
-
-  closest(selector: string) {
-    if (selector === 'label') {
-      let node: MockHTMLElement | null = this.parentElement;
-      while (node) {
-        if (node.tagName === 'LABEL') return node;
-        node = node.parentElement;
-      }
-    }
-    return null;
-  }
-}
-
-class MockHTMLInputElement extends MockHTMLElement {}
-class MockHTMLTextAreaElement extends MockHTMLElement {}
-class MockHTMLSelectElement extends MockHTMLElement {}
-class MockHTMLLabelElement extends MockHTMLElement {
-  constructor() {
-    super('label');
-  }
-}
-
-const globalAny = globalThis as any;
+import {
+  createMockDocument,
+  MockHTMLInputElement,
+  MockHTMLLabelElement,
+  MockHTMLTextAreaElement,
+  MockHTMLElement,
+  registerGlobalDomMocks,
+} from '../../test/helpers/mock-dom.ts';
 
 describe('issue helpers', () => {
   beforeEach(() => {
-    globalAny.HTMLElement = MockHTMLElement;
-    globalAny.Element = MockHTMLElement;
-    globalAny.HTMLInputElement = MockHTMLInputElement;
-    globalAny.HTMLTextAreaElement = MockHTMLTextAreaElement;
-    globalAny.HTMLSelectElement = MockHTMLSelectElement;
-    globalAny.HTMLLabelElement = MockHTMLLabelElement;
+    registerGlobalDomMocks();
   });
 
   it('converts proofread corrections to sidepanel issues', () => {
@@ -93,7 +31,7 @@ describe('issue helpers', () => {
   });
 
   it('resolves label text from associated <label>', () => {
-    const doc = new MockDocument();
+    const doc = createMockDocument();
     const input = new MockHTMLInputElement('input');
     input.ownerDocument = doc as unknown as Document;
     const label = new MockHTMLLabelElement();
@@ -106,7 +44,7 @@ describe('issue helpers', () => {
   });
 
   it('uses aria-labelledby references when present', () => {
-    const doc = new MockDocument();
+    const doc = createMockDocument();
     const label = new MockHTMLLabelElement();
     label.id = 'lbl';
     label.textContent = 'Full Name';
@@ -118,7 +56,7 @@ describe('issue helpers', () => {
   });
 
   it('falls back to aria-label and closest label text', () => {
-    const doc = new MockDocument();
+    const doc = createMockDocument();
     const input = new MockHTMLInputElement('input');
     input.ownerDocument = doc as unknown as Document;
     input.setAttribute('aria-label', 'Nickname');

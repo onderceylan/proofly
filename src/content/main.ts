@@ -2,6 +2,7 @@ import { logger } from '../services/logger.ts';
 import { ProofreadingManager } from './proofreading-manager.ts';
 import { isModelReady } from '../shared/utils/storage.ts';
 import { ensureProofreaderModelReady } from '../services/model-checker.ts';
+import { installDevSidepanelButton } from './dev-sidepanel-button.ts';
 
 let manager: ProofreadingManager | null = null;
 
@@ -9,6 +10,7 @@ async function initProofreading() {
   logger.info('Content script loaded');
 
   try {
+    await installDevSidepanelButton();
     await ensureProofreaderModelReady();
 
     const modelReady = await isModelReady();

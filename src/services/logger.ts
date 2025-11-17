@@ -9,7 +9,16 @@ const generateSessionId = (): string => {
 
 const sessionId = generateSessionId();
 
-let logQueue: any[] = [];
+interface DevLogEntry {
+  t: number;
+  ctx: string;
+  level: string;
+  msg: string[];
+  data?: Record<string, unknown>;
+  sid: string;
+}
+
+let logQueue: DevLogEntry[] = [];
 let isFlushScheduled = false;
 let flushTimeout: ReturnType<typeof setTimeout> | null = null;
 let sessionInitialized = false;
@@ -26,7 +35,7 @@ const checkChromeStorageAvailable = (): boolean => {
   }
 };
 
-const flushLogsToStorage = async () => {
+const flushLogsToStorage = async (): Promise<void> => {
   if (logQueue.length === 0) {
     isFlushScheduled = false;
     return;
@@ -44,12 +53,15 @@ const flushLogsToStorage = async () => {
 
   try {
     const result = await chrome.storage.local.get('__dev_logs');
-    let logs = result.__dev_logs || [];
+    const existingLogs = Array.isArray(result.__dev_logs)
+      ? (result.__dev_logs as DevLogEntry[])
+      : [];
+    let logs: DevLogEntry[] = existingLogs.slice();
 
     if (!sessionInitialized) {
       const currentContext = logsToFlush[0]?.ctx;
       if (currentContext) {
-        logs = logs.filter((log: any) => !(log.ctx === currentContext && log.sid !== sessionId));
+        logs = logs.filter((log) => !(log.ctx === currentContext && log.sid !== sessionId));
       }
       sessionInitialized = true;
     }
@@ -85,20 +97,20 @@ const scheduleFlush = () => {
   }, 100);
 };
 
-const devLogSink = (logEvent: any) => {
+const devLogSink = (logEvent: Record<string, any>): void => {
   try {
-    const structuredData = { ...logEvent };
+    const structuredData: Record<string, unknown> = { ...logEvent };
     delete structuredData.messages;
     delete structuredData.bindings;
     delete structuredData.level;
     delete structuredData.ts;
 
-    const entry = {
-      t: logEvent.ts,
-      ctx: logEvent.bindings[0]?.context || 'unknown',
-      level: logEvent.level.label,
+    const entry: DevLogEntry = {
+      t: Number(logEvent.ts),
+      ctx: logEvent.bindings?.[0]?.context || 'unknown',
+      level: logEvent.level?.label ?? 'info',
       msg: Array.isArray(logEvent.messages)
-        ? logEvent.messages.map((message: object) => serializeMessage(message))
+        ? logEvent.messages.map((message: unknown) => serializeMessage(message))
         : [],
       data: Object.keys(structuredData).length > 0 ? structuredData : undefined,
       sid: sessionId,

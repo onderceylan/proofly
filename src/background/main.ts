@@ -15,6 +15,7 @@ import type {
   ProofreaderBusyStateResponseMessage,
 } from '../shared/messages/issues.ts';
 import { serializeError } from '../shared/utils/serialize.ts';
+import { handleSidepanelToggleEvent } from './sidepanel-button-handler.ts';
 
 let badgeListenersRegistered = false;
 let currentBadgeState: 'ready' | 'clear' | 'count' | null = null;
@@ -344,6 +345,10 @@ chrome.runtime.onMessage.addListener((message: ProoflyMessage, sender, sendRespo
     return true;
   }
 
+  if (message.type === 'proofly:open-sidepanel-dev') {
+    return handleSidepanelToggleEvent(sendResponse, sender, message);
+  }
+
   return false;
 });
 
@@ -372,17 +377,6 @@ if ('setPanelBehavior' in chrome.sidePanel) {
 chrome.action.onClicked.addListener(async (tab) => {
   if (!tab.id || tab.id === chrome.tabs.TAB_ID_NONE) {
     return;
-  }
-
-  try {
-    await chrome.sidePanel.setOptions({
-      tabId: tab.id,
-      path: 'src/sidepanel/index.html',
-      enabled: true,
-    });
-    logger.info({ tabId: tab.id }, 'Side panel prepared for action click');
-  } catch (error) {
-    logger.error({ error, tabId: tab.id }, 'Failed to configure side panel');
   }
 });
 
