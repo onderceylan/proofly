@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2](https://github.com/onderceylan/proofly/compare/v0.4.1...v0.4.2) (2025-11-18)
+
+
+### Bug Fixes
+
+* improve content injection workflows ([#12](https://github.com/onderceylan/proofly/issues/12)) ([aac938b](https://github.com/onderceylan/proofly/commit/aac938b64f97fc15a515593085871ba35701115f))
+
 ## [0.4.1](https://github.com/onderceylan/proofly/compare/v0.4.0...v0.4.1) (2025-11-18)
 
 
