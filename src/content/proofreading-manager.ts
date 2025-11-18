@@ -536,19 +536,19 @@ export class ProofreadingManager {
     corrections: ProofreadCorrection[],
     elementText?: string
   ): Array<{ issue: SessionIssue; correction: ProofreadCorrection }> {
-    return corrections
-      .map((correction, index) => ({ correction, index }))
-      .filter(({ correction }) => correction.endIndex > correction.startIndex)
-      .map(({ correction, index }) => ({
-        issue: {
-          id: this.buildIssueId(correction, index),
-          start: correction.startIndex,
-          end: correction.endIndex,
-          type: this.toIssueType(correction),
-          label: this.buildIssueLabel(correction, elementText),
-        },
-        correction,
-      }));
+    const validCorrections = corrections.filter(
+      (correction) => correction.endIndex > correction.startIndex
+    );
+    return validCorrections.map((correction, index) => ({
+      issue: {
+        id: this.buildIssueId(correction, index),
+        start: correction.startIndex,
+        end: correction.endIndex,
+        type: this.toIssueType(correction),
+        label: this.buildIssueLabel(correction, elementText),
+      },
+      correction,
+    }));
   }
 
   private buildIssueLabel(correction: ProofreadCorrection, elementText?: string): string {
@@ -923,8 +923,11 @@ export class ProofreadingManager {
       return null;
     }
 
-    for (let index = 0; index < corrections.length; index += 1) {
-      const correction = corrections[index];
+    const validCorrections = corrections.filter(
+      (correction) => correction.endIndex > correction.startIndex
+    );
+    for (let index = 0; index < validCorrections.length; index += 1) {
+      const correction = validCorrections[index];
       const currentId = this.buildIssueId(correction, index);
       if (currentId === issueId) {
         return correction;
