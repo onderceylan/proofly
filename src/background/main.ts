@@ -212,8 +212,6 @@ function handleProofreaderStateMessage(
   message: ProofreaderStateMessage,
   sender: chrome.runtime.MessageSender
 ): void {
-  logger.info({ message, sender }, 'Handling proofreader state message');
-
   const tabId = sender.tab?.id;
   if (typeof tabId !== 'number') {
     return;
@@ -255,6 +253,9 @@ function handleProofreaderStateMessage(
     type: 'proofly:proofreader-state-update',
     payload: { tabId, busy: false },
   });
+
+  const latestState = issuesByTab.get(tabId) ?? null;
+  enqueueBadgeUpdate(tabId, latestState);
 }
 
 async function updateActionBadge(): Promise<void> {

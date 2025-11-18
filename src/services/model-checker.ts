@@ -16,7 +16,9 @@ async function updateStorage(
   });
 }
 
-export async function ensureProofreaderModelReady(): Promise<boolean> {
+export async function ensureProofreaderModelReady(
+  expectedInputLanguages: string[] = ['en']
+): Promise<boolean> {
   if (!('Proofreader' in window)) {
     logger.warn('Proofreader API unavailable while checking model readiness');
     await updateStorage('unavailable', false, false);
@@ -24,7 +26,9 @@ export async function ensureProofreaderModelReady(): Promise<boolean> {
   }
 
   try {
-    const availability = await Proofreader.availability();
+    const availability = await Proofreader.availability({
+      expectedInputLanguages,
+    });
 
     if (availability === 'available') {
       await updateStorage('available', true, true);

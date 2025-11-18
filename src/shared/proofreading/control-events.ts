@@ -3,6 +3,7 @@ import type { IssueElementKind } from '../messages/issues.ts';
 export type ProofreadLifecycleStatus =
   | 'queued'
   | 'throttled'
+  | 'language-detected'
   | 'start'
   | 'complete'
   | 'ignored'
@@ -32,6 +33,8 @@ export interface ProofreadControlEventDetail {
   queueLength?: number;
   debounceMs?: number;
   forced?: boolean;
+  language?: string | null;
+  fallbackLanguage?: string;
   timestamp: number;
 }
 

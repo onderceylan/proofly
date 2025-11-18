@@ -13,7 +13,10 @@ export interface SidepanelIssue {
   explanation?: string;
 }
 
-export type IssueGroupErrorCode = 'unsupported-language';
+export type IssueGroupErrorCode =
+  | 'unsupported-language'
+  | 'language-detection-unconfident'
+  | 'language-detection-error';
 
 export type IssueGroupErrorSeverity = 'error' | 'warning';
 
@@ -45,6 +48,8 @@ export interface ProofreadRequestMessage {
   payload: {
     requestId: string;
     text: string;
+    language: string;
+    fallbackLanguage: string;
   };
 }
 

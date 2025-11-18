@@ -1,5 +1,10 @@
 import { AsyncQueue } from '../shared/utils/queue.ts';
 import { ContentHighlighter } from './components/content-highlighter.ts';
+import {
+  createLanguageDetector,
+  createLanguageDetectorAdapter,
+  createLanguageDetectionService,
+} from '../services/language-detector.ts';
 import './components/correction-popover.ts';
 import type { CorrectionPopover } from './components/correction-popover.ts';
 import { logger } from '../services/logger.ts';
@@ -66,7 +71,7 @@ export class ProofreadingManager {
   private observer: MutationObserver | null = null;
   private activeElement: HTMLElement | null = null;
   private activeSessionElement: HTMLElement | null = null;
-  private readonly pageId = createUniqueId('proofread-page');
+  private readonly pageId = createUniqueId('page');
   private readonly elementIds = new WeakMap<HTMLElement, string>();
   private readonly elementLookup = new Map<string, HTMLElement>();
   private readonly elementCorrections = new Map<HTMLElement, ProofreadCorrection[]>();
@@ -84,6 +89,7 @@ export class ProofreadingManager {
     getElementText: (element) => this.getElementText(element),
     onLifecycleEvent: (event) => this.handleProofreadLifecycle(event),
   });
+  private languageDetectionService: ReturnType<typeof createLanguageDetectionService> | null = null;
   private enabledCorrectionTypes = new Set<CorrectionTypeKey>();
   private correctionTypeCleanup: (() => void) | null = null;
   private correctionColors: CorrectionColorThemeMap = getActiveCorrectionColors();
@@ -104,12 +110,25 @@ export class ProofreadingManager {
   private readonly isMacPlatform = isMacOS();
 
   async initialize(): Promise<void> {
+    await this.initializeLanguageDetection();
     await this.initializeCorrectionPreferences();
     await this.initializeProofreadPreferences();
     this.observeEditableElements();
     this.emitIssuesUpdate();
     this.updatePopoverVisibility();
     logger.info('Proofreading manager ready');
+  }
+
+  private async initializeLanguageDetection(): Promise<void> {
+    try {
+      const detector = await createLanguageDetector();
+      const adapter = createLanguageDetectorAdapter(detector);
+      this.languageDetectionService = createLanguageDetectionService(adapter);
+      logger.info('Language detection service initialized');
+    } catch (error) {
+      logger.warn({ error }, 'Language detection unavailable, using English fallback');
+      this.languageDetectionService = null;
+    }
   }
 
   private ensurePopover(): void {
@@ -653,12 +672,34 @@ export class ProofreadingManager {
     return Array.from(messages.values());
   }
 
-  private buildUnsupportedLanguageError(errorMessage?: string): IssueGroupError {
+  private buildUnsupportedLanguageError(language: string, errorMessage?: string): IssueGroupError {
+    const languageLabel = language?.trim() || 'unknown';
     const details = errorMessage ? ` Reason: ${errorMessage}` : '';
     return {
       code: 'unsupported-language',
       severity: 'error',
-      message: `Proofreader could not process the language for this text.${details}`.trim(),
+      message: `Proofreader API rejected language "${languageLabel}".${details}`.trim(),
+      details: {
+        language: languageLabel,
+      },
+    };
+  }
+
+  private buildLanguageDetectionUnconfidentWarning(): IssueGroupError {
+    return {
+      code: 'language-detection-unconfident',
+      severity: 'warning',
+      message:
+        "Could not confidently detect this field's language. Defaulting to English for proofreading.",
+    };
+  }
+
+  private buildLanguageDetectionError(): IssueGroupError {
+    return {
+      code: 'language-detection-error',
+      severity: 'error',
+      message:
+        'Language detection failed on this field. Defaulting to English; results might be less accurate.',
     };
   }
 
@@ -889,16 +930,55 @@ export class ProofreadingManager {
     return this.proofreadQueue.enqueue(async () => {
       const selection = this.normalizeSelectionRange(context.selection, text.length);
       const targetText = selection ? text.slice(selection.start, selection.end) : text;
-      const response = await this.requestProofread(targetText, context);
+      let detectedLanguage: string | null = null;
+
+      if (this.languageDetectionService) {
+        try {
+          detectedLanguage = await this.languageDetectionService.detectLanguage(targetText);
+          if (detectedLanguage) {
+            this.clearElementMessage(element, 'language-detection-unconfident');
+            this.clearElementMessage(element, 'language-detection-error');
+          } else {
+            this.setElementMessage(element, this.buildLanguageDetectionUnconfidentWarning());
+            this.clearElementMessage(element, 'language-detection-error');
+          }
+        } catch (error) {
+          logger.warn({ error }, 'Language detection failed, falling back to English');
+          this.clearElementMessage(element, 'language-detection-unconfident');
+          this.setElementMessage(element, this.buildLanguageDetectionError());
+          detectedLanguage = null;
+        }
+      } else {
+        this.clearElementMessage(element, 'language-detection-unconfident');
+        this.clearElementMessage(element, 'language-detection-error');
+      }
+
+      const fallbackLanguage = 'en';
+      const requestedLanguage = detectedLanguage?.trim() || fallbackLanguage;
+      this.handleProofreadLifecycle({
+        status: 'language-detected',
+        element,
+        executionId: context.executionId,
+        textLength: targetText.length,
+        language: detectedLanguage,
+        fallbackLanguage,
+      });
+
+      const response = await this.requestProofread(
+        targetText,
+        requestedLanguage,
+        fallbackLanguage,
+        context
+      );
       if (!response.ok) {
         if (response.error.code === 'unsupported-language') {
           this.setElementMessage(
             element,
-            this.buildUnsupportedLanguageError(response.error.message)
+            this.buildUnsupportedLanguageError(requestedLanguage, response.error.message)
           );
           logger.warn(
-            { error: response.error.message },
-            'Proofreader rejected requested text due to unsupported language'
+            { language: requestedLanguage, error: response.error.message },
+            'Proofreader rejected requested language'
           );
           return null;
         }
@@ -907,6 +987,7 @@ export class ProofreadingManager {
           logger.info(
             {
               elementId: this.getElementId(element),
+              language: requestedLanguage,
             },
             'Proofreader request cancelled, scheduling retry'
           );
@@ -935,6 +1016,8 @@ export class ProofreadingManager {
 
   private async requestProofread(
     text: string,
+    language: string,
+    fallbackLanguage: string,
     context: ProofreadRunContext
   ): Promise<ProofreadResponse> {
     const request: ProofreadRequestMessage = {
@@ -942,6 +1025,8 @@ export class ProofreadingManager {
       payload: {
         requestId: context.executionId,
         text,
+        language,
+        fallbackLanguage,
       },
     };
 
@@ -953,7 +1038,10 @@ export class ProofreadingManager {
       }
       return response;
     } catch (error) {
-      logger.error({ error }, 'Failed to dispatch proofreader request to service worker');
+      logger.error(
+        { error, language, fallbackLanguage },
+        'Failed to dispatch proofreader request to service worker'
+      );
       if (error instanceof Error) {
         throw error;
       }
@@ -1286,6 +1374,8 @@ export class ProofreadingManager {
       queueLength: event.queueLength,
       debounceMs: event.debounceMs,
       forced: event.forced,
+      language: event.language,
+      fallbackLanguage: event.fallbackLanguage,
       timestamp: Date.now(),
     });
   }
@@ -1340,6 +1430,9 @@ export class ProofreadingManager {
     this.elementLookup.clear();
     this.elementIssueLookup.clear();
     this.elementMessages.clear();
+
+    this.languageDetectionService?.destroy();
+    this.languageDetectionService = null;
 
     this.registeredElements.clear();
     this.proofreadQueue.clear();

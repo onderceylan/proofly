@@ -11,9 +11,18 @@ import type {
 } from '../shared/messages/issues.ts';
 import { serializeError } from '../shared/utils/serialize.ts';
 
-let proofreaderService: ReturnType<typeof createProofreadingService> | null = null;
-let initializationPromise: Promise<ReturnType<typeof createProofreadingService>> | null = null;
+const DEFAULT_FALLBACK_LANGUAGE = 'en';
+
+const proofreaderServices = new Map<string, ReturnType<typeof createProofreadingService>>();
 let activeOperations = 0;
+
+const getLanguageCacheKey = (language: string): string =>
+  language.trim().toLowerCase() || DEFAULT_FALLBACK_LANGUAGE;
+
+const normalizeLanguage = (language: string, fallback: string): string => {
+  const trimmed = language.trim();
+  return trimmed.length > 0 ? trimmed : fallback;
+};
 
 const isUnsupportedLanguageError = (error: unknown): boolean => {
   if (!error) {
@@ -31,56 +40,44 @@ const isUnsupportedLanguageError = (error: unknown): boolean => {
   return message.includes('language options') || message.includes('unsupported language');
 };
 
-async function initializeProofreaderService(): Promise<
-  ReturnType<typeof createProofreadingService>
-> {
-  logger.info('Initializing Proofreader service worker instance');
+async function getOrCreateProofreaderServiceForLanguage(
+  language: string,
+  fallbackLanguage: string
+): Promise<ReturnType<typeof createProofreadingService>> {
+  const cacheKey = getLanguageCacheKey(language);
+  const cached = proofreaderServices.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  logger.info(
+    { language, fallbackLanguage },
+    'Initializing Proofreader service worker instance for language'
+  );
   const proofreader = await createProofreader({
+    expectedInputLanguages: [language],
     includeCorrectionTypes: true,
     includeCorrectionExplanations: true,
-    correctionExplanationLanguage: 'en',
+    correctionExplanationLanguage: fallbackLanguage,
   });
   const adapter = createProofreaderAdapter(proofreader);
   const service = createProofreadingService(adapter);
-  proofreaderService = service;
+  proofreaderServices.set(cacheKey, service);
   return service;
-}
-
-async function getOrCreateProofreaderService(): Promise<
-  ReturnType<typeof createProofreadingService>
-> {
-  if (proofreaderService) {
-    return proofreaderService;
-  }
-
-  if (!initializationPromise) {
-    initializationPromise = initializeProofreaderService().catch((error) => {
-      initializationPromise = null;
-      throw error;
-    });
-  }
-
-  try {
-    return await initializationPromise;
-  } finally {
-    initializationPromise = null;
-  }
 }
 
 export async function handleProofreadRequest(
   message: ProofreadRequestMessage
 ): Promise<ProofreadResponse> {
-  const { requestId, text } = message.payload;
+  const { requestId, text, language, fallbackLanguage } = message.payload;
+  const normalizedFallback = fallbackLanguage || DEFAULT_FALLBACK_LANGUAGE;
+  const requestedLanguage = normalizeLanguage(language, normalizedFallback);
 
   activeOperations += 1;
   try {
-    const service = await getOrCreateProofreaderService();
-    logger.info(
-      {
-        requestId,
-        textLength: text.length,
-      },
-      'Proofreader service will initiate proofread request'
+    const service = await getOrCreateProofreaderServiceForLanguage(
+      requestedLanguage,
+      normalizedFallback
     );
     const result = await service.proofread(text);
     logger.info(
@@ -107,7 +104,7 @@ export async function handleProofreadRequest(
         ? 'unsupported-language'
         : 'unknown';
     logger.warn(
-      { error: serializeError(error), requestId },
+      { error: serializeError(error), language: requestedLanguage, requestId },
       'Proofreader API call failed in service worker'
     );
 
@@ -133,9 +130,8 @@ export function resetProofreaderServices(): void {
     );
     return;
   }
-  proofreaderService?.destroy();
-  proofreaderService = null;
-  initializationPromise = null;
+  proofreaderServices.forEach((service) => service.destroy());
+  proofreaderServices.clear();
 }
 
 export function isProofreaderProxyBusy(): boolean {
