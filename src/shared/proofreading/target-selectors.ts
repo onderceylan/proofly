@@ -118,6 +118,33 @@ export function isPresentation(element: Element): boolean {
   );
 }
 
+export function isUsernameField(element: Element): boolean {
+  if (!(element instanceof HTMLElement)) {
+    return false;
+  }
+
+  const value = element.getAttribute('autocomplete');
+  return typeof value === 'string' && value.trim().toLowerCase() === 'username';
+}
+
+export function isOneTimeCodeField(element: Element): boolean {
+  if (!(element instanceof HTMLElement)) {
+    return false;
+  }
+
+  const value = element.getAttribute('autocomplete');
+  return typeof value === 'string' && value.trim().toLowerCase() === 'one-time-code';
+}
+
+export function isNumericField(element: Element): boolean {
+  if (!(element instanceof HTMLElement)) {
+    return false;
+  }
+
+  const value = element.getAttribute('inputmode');
+  return typeof value === 'string' && value.trim().toLowerCase() === 'numeric';
+}
+
 export function shouldAutoProofread(element: Element): element is HTMLElement {
   if (!isProofreadTarget(element)) {
     return false;
@@ -156,6 +183,18 @@ export function shouldAutoProofread(element: Element): element is HTMLElement {
   }
 
   if (isGrammarlyDisabled(element)) {
+    return false;
+  }
+
+  if (isUsernameField(element)) {
+    return false;
+  }
+
+  if (isOneTimeCodeField(element)) {
+    return false;
+  }
+
+  if (isNumericField(element)) {
     return false;
   }
 

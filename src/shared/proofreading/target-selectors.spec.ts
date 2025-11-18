@@ -8,6 +8,9 @@ import {
   isWritingSuggestionsDisabled,
   shouldMirrorOnElement,
   shouldAutoProofread,
+  isUsernameField,
+  isOneTimeCodeField,
+  isNumericField,
 } from './target-selectors.ts';
 
 class MockElement {
@@ -148,5 +151,29 @@ describe('proofread target selectors', () => {
     const otherInput = new MockInputElement();
     otherInput.setAttribute('type', 'email');
     expect(isTextInput(otherInput as unknown as Element)).toBe(false);
+  });
+
+  it('ignores username fields', () => {
+    const el = new MockElement('input');
+    expect(isUsernameField(el as unknown as Element)).toBe(false);
+    el.setAttribute('autocomplete', 'username');
+    expect(isUsernameField(el as unknown as Element)).toBe(true);
+    expect(shouldAutoProofread(el as unknown as Element)).toBe(false);
+  });
+
+  it('ignores one-time-code fields', () => {
+    const el = new MockElement('input');
+    expect(isOneTimeCodeField(el as unknown as Element)).toBe(false);
+    el.setAttribute('autocomplete', 'one-time-code');
+    expect(isOneTimeCodeField(el as unknown as Element)).toBe(true);
+    expect(shouldAutoProofread(el as unknown as Element)).toBe(false);
+  });
+
+  it('ignores numeric fields', () => {
+    const el = new MockElement('input');
+    expect(isNumericField(el as unknown as Element)).toBe(false);
+    el.setAttribute('inputmode', 'numeric');
+    expect(isNumericField(el as unknown as Element)).toBe(true);
+    expect(shouldAutoProofread(el as unknown as Element)).toBe(false);
   });
 });
