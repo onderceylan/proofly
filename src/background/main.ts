@@ -25,6 +25,7 @@ interface TabIssuesState {
 }
 
 const issuesByTab = new Map<number, TabIssuesState>();
+const badgeUpdateQueues = new Map<number, Promise<void>>();
 const busyTabs = new Set<number>();
 const BUSY_BADGE_COLOR = '#facc15';
 const BUSY_TEXT_COLOR = '#000000';
@@ -61,13 +62,54 @@ function countIssues(state: TabIssuesState | null | undefined): number {
   return state.payload.elements.reduce((total, group) => total + group.issues.length, 0);
 }
 
-async function updateBadgeForIssues(
-  tabId: number,
-  payloadState: TabIssuesState | null
-): Promise<void> {
-  const totalIssues = countIssues(payloadState);
+function enqueueBadgeUpdate(tabId: number, payloadState: TabIssuesState | null): void {
+  const queue = badgeUpdateQueues.get(tabId) ?? Promise.resolve();
+  const next = queue
+    .catch((error) => {
+      logger.warn(
+        { error: serializeError(error), tabId },
+        'Previous badge update failed, continuing'
+      );
+    })
+    .then(async () => {
+      await applyBadgeUpdate(tabId, payloadState);
+    })
+    .catch((error) => {
+      logger.error({ error: serializeError(error), tabId }, 'Badge update failed');
+    });
+
+  badgeUpdateQueues.set(tabId, next);
+}
+
+async function applyBadgeUpdate(tabId: number, payloadState: TabIssuesState | null): Promise<void> {
+  const latestState = issuesByTab.get(tabId) ?? null;
+  const activeState = payloadState ?? latestState;
+
+  if (payloadState && latestState && payloadState !== latestState) {
+    if (payloadState.revision < latestState.revision) {
+      logger.info(
+        {
+          tabId,
+          revision: payloadState.revision,
+          latestRevision: latestState.revision,
+        },
+        'Skipping stale badge update'
+      );
+      return;
+    }
+  }
+
+  if (!payloadState && latestState) {
+    logger.info(
+      { tabId, latestRevision: latestState.revision },
+      'Skipping badge clear because newer issues exist'
+    );
+    return;
+  }
+
+  const totalIssues = countIssues(activeState);
   logger.info(
-    { tabId, totalIssues, revision: payloadState?.revision ?? null },
+    { tabId, totalIssues, revision: activeState?.revision ?? null },
     'Updating badge for issues'
   );
   try {
@@ -147,9 +189,7 @@ function handleIssuesUpdate(
     logger.warn({ error: serializeError(error), tabId }, 'Failed to store debug payload');
   }
 
-  void updateBadgeForIssues(tabId, state).catch((error) => {
-    logger.error({ error: serializeError(error), tabId }, 'Failed to update badge for issues');
-  });
+  enqueueBadgeUpdate(tabId, state);
 }
 
 function handleIssuesStateRequest(
@@ -355,18 +395,14 @@ chrome.runtime.onMessage.addListener((message: ProoflyMessage, sender, sendRespo
 chrome.tabs.onRemoved.addListener((tabId) => {
   issuesByTab.delete(tabId);
   busyTabs.delete(tabId);
-  void updateBadgeForIssues(tabId, null).catch((error) => {
-    logger.error({ error: serializeError(error), tabId }, 'Failed to reset badge on tab removal');
-  });
+  enqueueBadgeUpdate(tabId, null);
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.status === 'loading') {
     issuesByTab.delete(tabId);
     busyTabs.delete(tabId);
-    void updateBadgeForIssues(tabId, null).catch((error) => {
-      logger.error({ error: serializeError(error), tabId }, 'Failed to reset badge on navigation');
-    });
+    enqueueBadgeUpdate(tabId, null);
   }
 });
 
