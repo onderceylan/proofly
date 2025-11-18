@@ -287,7 +287,11 @@ describe('TargetSession', () => {
       },
     } as Partial<MouseEvent> & { target: any });
 
-    expect(hooks.onUnderlineClick).toHaveBeenCalledWith('iss-1', expect.any(DOMRect));
+    expect(hooks.onUnderlineClick).toHaveBeenCalledWith(
+      'iss-1',
+      expect.any(DOMRect),
+      expect.objectContaining({ dataset: { issueId: 'iss-1' } })
+    );
   });
 
   it('activates underline issues via keyboard events', () => {
@@ -310,7 +314,11 @@ describe('TargetSession', () => {
       },
     } as unknown as KeyboardEvent);
 
-    expect(hooks.onUnderlineClick).toHaveBeenCalledWith('kbd-1', expect.any(DOMRect));
+    expect(hooks.onUnderlineClick).toHaveBeenCalledWith(
+      'kbd-1',
+      expect.any(DOMRect),
+      expect.objectContaining({ dataset: { issueId: 'kbd-1' } })
+    );
   });
 
   it('handles double click autofix when enabled', () => {

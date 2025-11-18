@@ -434,7 +434,7 @@ export class ProofreadingManager {
           }
           void this.controller.proofread(element);
         },
-        onUnderlineClick: (issueId, pageRect) => {
+        onUnderlineClick: (issueId, pageRect, anchorNode) => {
           this.activeSessionElement = element;
           const lookup = this.elementIssueLookup.get(element);
           const correction = lookup?.get(issueId);
@@ -443,7 +443,19 @@ export class ProofreadingManager {
           }
           const anchorX = pageRect.left + pageRect.width / 2;
           const anchorY = pageRect.top + pageRect.height;
-          this.showPopoverForCorrection(element, correction, anchorX, anchorY);
+          const positionResolver = anchorNode
+            ? () => {
+                if (!anchorNode.isConnected) {
+                  return null;
+                }
+                const rect = anchorNode.getBoundingClientRect();
+                return {
+                  x: rect.left + rect.width / 2,
+                  y: rect.top + rect.height,
+                };
+              }
+            : undefined;
+          this.showPopoverForCorrection(element, correction, anchorX, anchorY, positionResolver);
         },
         onUnderlineDoubleClick: (issueId) => {
           const lookup = this.elementIssueLookup.get(element);
@@ -1099,7 +1111,8 @@ export class ProofreadingManager {
     element: HTMLElement,
     correction: ProofreadCorrection,
     x: number,
-    y: number
+    y: number,
+    positionResolver?: () => { x: number; y: number } | null
   ): void {
     if (!this.popover) {
       this.updatePopoverVisibility();
@@ -1115,7 +1128,7 @@ export class ProofreadingManager {
       this.handleCorrectionFromPopover(element, applied);
     });
 
-    this.popover.show(x, y, { anchorElement: element });
+    this.popover.show(x, y, { anchorElement: element, positionResolver });
   }
 
   private async initializeCorrectionPreferences(): Promise<void> {

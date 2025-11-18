@@ -21,7 +21,7 @@ export type IssueColorPalette = CorrectionColorThemeMap;
 
 interface Hooks {
   onNeedProofread?: (value: string) => void;
-  onUnderlineClick?: (issueId: string, pageRect: DOMRect) => void;
+  onUnderlineClick?: (issueId: string, pageRect: DOMRect, anchorNode: HTMLElement) => void;
   onUnderlineDoubleClick?: (issueId: string, issue: Issue) => void;
   onInvalidateIssues?: () => void;
 }
@@ -184,7 +184,7 @@ export class TargetSession {
       rect.height
     );
     this.setActiveIssue(issueId);
-    this.hooks.onUnderlineClick(issueId, pageRect);
+    this.hooks.onUnderlineClick(issueId, pageRect, node);
   }
 
   constructor(

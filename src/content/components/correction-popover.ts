@@ -6,6 +6,11 @@ type AnchorState = {
   controls: string | null;
 };
 
+type PositionResolver = () => { x: number; y: number } | null;
+
+const VIEWPORT_MARGIN = 10;
+const RESIZE_DEBOUNCE_MS = 180;
+
 export class CorrectionPopover extends HTMLElement {
   private readonly internals: ElementInternals | null;
   private contentElement: HTMLDivElement | null = null;
@@ -17,6 +22,9 @@ export class CorrectionPopover extends HTMLElement {
   private isAnimating: boolean = false;
   private hideTimeoutId: number | null = null;
   private anchorElement: HTMLElement | null = null;
+  private positionResolver: PositionResolver | null = null;
+  private resizeListener: (() => void) | null = null;
+  private resizeTimeoutId: number | null = null;
   private readonly anchorAriaCache = new WeakMap<HTMLElement, AnchorState>();
   private popoverId: string;
   private suggestionElementId: string;
@@ -69,8 +77,13 @@ export class CorrectionPopover extends HTMLElement {
     this.updateContent();
   }
 
-  show(x: number, y: number, options?: { anchorElement?: HTMLElement }): void {
+  show(
+    x: number,
+    y: number,
+    options?: { anchorElement?: HTMLElement; positionResolver?: PositionResolver | null }
+  ): void {
     this.setAnchorElement(options?.anchorElement ?? null);
+    this.setPositionResolver(options?.positionResolver ?? null);
     // Cancel any pending hide animation
     if (this.hideTimeoutId !== null) {
       clearTimeout(this.hideTimeoutId);
@@ -82,32 +95,7 @@ export class CorrectionPopover extends HTMLElement {
     this.showPopover();
     this.focus({ preventScroll: true });
 
-    // Get popover dimensions
-    const rect = this.getBoundingClientRect();
-    const margin = 10; // Minimum margin from viewport edge
-
-    // Adjust x to keep popover within viewport (horizontal bounds)
-    const maxX = window.innerWidth - rect.width - margin;
-    const minX = margin;
-    if (x > maxX) {
-      x = maxX;
-    }
-    if (x < minX) {
-      x = minX;
-    }
-
-    // Adjust y to keep popover within viewport (vertical bounds)
-    const maxY = window.innerHeight - rect.height - margin;
-    const minY = margin;
-    if (y > maxY) {
-      y = maxY;
-    }
-    if (y < minY) {
-      y = minY;
-    }
-
-    this.style.left = `${x}px`;
-    this.style.top = `${y}px`;
+    this.applyPosition(x, y);
 
     // Trigger flip in animation
     if (this.contentElement) {
@@ -164,6 +152,7 @@ export class CorrectionPopover extends HTMLElement {
       this.hideTimeoutId = window.setTimeout(() => {
         this.hidePopover();
         this.restoreAnchorElement();
+        this.setPositionResolver(null);
         this.isAnimating = false;
         this.hideTimeoutId = null;
         this.dispatchEvent(new CustomEvent('proofly:popover-hide'));
@@ -172,6 +161,7 @@ export class CorrectionPopover extends HTMLElement {
       // No animation, hide immediately
       this.hidePopover();
       this.restoreAnchorElement();
+      this.setPositionResolver(null);
       this.dispatchEvent(new CustomEvent('proofly:popover-hide'));
     }
   }
@@ -358,6 +348,69 @@ export class CorrectionPopover extends HTMLElement {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+  }
+
+  private setPositionResolver(resolver: PositionResolver | null): void {
+    this.positionResolver = resolver;
+    if (resolver) {
+      this.attachResizeListener();
+    } else {
+      this.detachResizeListener();
+    }
+  }
+
+  private attachResizeListener(): void {
+    if (this.resizeListener) {
+      return;
+    }
+    this.resizeListener = () => {
+      if (this.resizeTimeoutId !== null) {
+        clearTimeout(this.resizeTimeoutId);
+      }
+      this.resizeTimeoutId = window.setTimeout(() => {
+        this.resizeTimeoutId = null;
+        this.resolvePosition();
+      }, RESIZE_DEBOUNCE_MS);
+    };
+    window.addEventListener('resize', this.resizeListener, { passive: true });
+  }
+
+  private detachResizeListener(): void {
+    if (this.resizeListener) {
+      window.removeEventListener('resize', this.resizeListener);
+      this.resizeListener = null;
+    }
+    if (this.resizeTimeoutId !== null) {
+      clearTimeout(this.resizeTimeoutId);
+      this.resizeTimeoutId = null;
+    }
+  }
+
+  private resolvePosition(): void {
+    if (!this.positionResolver) {
+      return;
+    }
+    const next = this.positionResolver();
+    if (!next) {
+      return;
+    }
+    this.applyPosition(next.x, next.y);
+  }
+
+  private applyPosition(x: number, y: number): void {
+    const rect = this.getBoundingClientRect();
+    const margin = VIEWPORT_MARGIN;
+
+    const maxX = window.innerWidth - rect.width - margin;
+    const minX = margin;
+    const nextX = Math.min(Math.max(x, minX), Math.max(minX, maxX));
+
+    const maxY = window.innerHeight - rect.height - margin;
+    const minY = margin;
+    const nextY = Math.min(Math.max(y, minY), Math.max(minY, maxY));
+
+    this.style.left = `${nextX}px`;
+    this.style.top = `${nextY}px`;
   }
 
   private getStyles(): string {

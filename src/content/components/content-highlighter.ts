@@ -246,8 +246,19 @@ export class ContentHighlighter {
     const x = correctionRect ? correctionRect.left + correctionRect.width / 2 : event.clientX;
     const y = correctionRect ? correctionRect.bottom + 8 : event.clientY + 20;
 
+    const positionResolver = () => {
+      const rect = this.getCorrectionBoundingRect(element, clickedCorrection);
+      if (!rect) {
+        return null;
+      }
+      return {
+        x: rect.left + rect.width / 2,
+        y: rect.bottom + 8,
+      };
+    };
+
     logger.info({ x, y }, 'Showing popover at');
-    this.popover.show(x, y, { anchorElement: element });
+    this.popover.show(x, y, { anchorElement: element, positionResolver });
   }
 
   private handleElementDoubleClick(element: HTMLElement, event: MouseEvent): void {
