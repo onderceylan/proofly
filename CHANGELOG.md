@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/onderceylan/proofly/compare/v0.4.0...v0.4.1) (2025-11-18)
+
+
+### Bug Fixes
+
+* sync issue count on badge ([#10](https://github.com/onderceylan/proofly/issues/10)) ([899d854](https://github.com/onderceylan/proofly/commit/899d8544c2ddf74513238461353c2f22c8290634))
+
 ## [0.4.0](https://github.com/onderceylan/proofly/compare/v0.3.1...v0.4.0) (2025-11-15)
 
 
