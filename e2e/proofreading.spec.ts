@@ -14,6 +14,9 @@ import {
   clickHighlightDetail,
   waitForHighlightCount,
   getPageBadgeCount,
+  getSidebarIssueCount,
+  getSidebarIssueCardsCount,
+  getTabInfoForUrl,
   countContentEditableHighlights,
   waitForContentEditableHighlightCount,
   waitForPopoverOpen,
@@ -22,10 +25,14 @@ import {
   delay,
   getImmediateHighlightCount,
   startProofreadControlCapture,
+  toggleDevSidepanelButton,
   triggerProofreadShortcut,
+  waitForSidepanelPage,
+  waitForSidebarIssueCount,
   waitForHighlighterPresence,
   hasHighlighterHost,
   waitForProofreadingComplete,
+  closeSidepanelForTab,
 } from './helpers/utils';
 import { Page, type KeyInput } from 'puppeteer-core';
 
@@ -673,6 +680,69 @@ describe('Proofly proofreading', () => {
       expect(fullHighlightCount).toBeGreaterThan(selectionHighlightCount);
     } finally {
       await ensureAutoCorrectEnabled(page, true);
+      await page.goto(testPageUrl, { waitUntil: 'networkidle0' });
+    }
+  });
+
+  test('should abort proofreading and clear sidebar issues when textarea is removed', async () => {
+    const testPageUrl = 'http://localhost:8080/test.html';
+    const browser = getBrowser();
+    const extensionId = getExtensionId();
+
+    await page.goto(testPageUrl, { waitUntil: 'networkidle0' });
+    await startProofreadControlCapture(page);
+
+    await page.waitForSelector('#test-textarea', { timeout: 10000 });
+    await page.focus('#test-textarea');
+    await page.evaluate(() => {
+      const textarea = document.getElementById('test-textarea') as HTMLTextAreaElement | null;
+      textarea?.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    const initialHighlightCount = await waitForHighlightCount(
+      page,
+      'test-textarea',
+      (count) => count > 0
+    );
+
+    await waitForProofreadingComplete(page);
+    await delay(1000);
+
+    const tabInfo = await getTabInfoForUrl(browser, extensionId, testPageUrl);
+    expect(tabInfo).not.toBeNull();
+    if (!tabInfo) {
+      return;
+    }
+
+    await toggleDevSidepanelButton(page);
+    const sidebarPage = await waitForSidepanelPage(browser, extensionId);
+
+    try {
+      await waitForSidebarIssueCount(sidebarPage, initialHighlightCount);
+      expect(await getSidebarIssueCount(sidebarPage)).toBe(initialHighlightCount);
+      expect(await getSidebarIssueCardsCount(sidebarPage)).toBe(initialHighlightCount);
+
+      await startProofreadControlCapture(page);
+      await page.focus('#test-textarea');
+      await page.type('#test-textarea', ' removing target node');
+      await triggerProofreadShortcut(page);
+      await delay(100);
+
+      await page.evaluate(() => {
+        const textarea = document.getElementById('test-textarea');
+        textarea?.remove();
+      });
+
+      await waitForHighlighterPresence(page, 'test-textarea', { present: false });
+
+      await waitForSidebarIssueCount(sidebarPage, 0);
+      expect(await getSidebarIssueCount(sidebarPage)).toBe(0);
+      expect(await getSidebarIssueCardsCount(sidebarPage)).toBe(0);
+    } finally {
+      await closeSidepanelForTab(browser, extensionId, tabInfo.tabId).catch(() => {});
+      if (!sidebarPage.isClosed()) {
+        await sidebarPage.close().catch(() => {});
+      }
       await page.goto(testPageUrl, { waitUntil: 'networkidle0' });
     }
   });
