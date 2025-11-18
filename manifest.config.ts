@@ -14,6 +14,7 @@ export default defineManifest({
     48: 'logo-square.png',
   },
   action: {
+    default_title: 'Click to open issues panel',
     default_icon: {
       48: 'logo-square.png',
     },

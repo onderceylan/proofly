@@ -13,7 +13,10 @@ export interface SidepanelIssue {
   explanation?: string;
 }
 
-export type IssueGroupErrorCode = 'unsupported-language';
+export type IssueGroupErrorCode =
+  | 'unsupported-language'
+  | 'language-detection-unconfident'
+  | 'language-detection-error';
 
 export type IssueGroupErrorSeverity = 'error' | 'warning';
 
@@ -45,6 +48,8 @@ export interface ProofreadRequestMessage {
   payload: {
     requestId: string;
     text: string;
+    language: string;
+    fallbackLanguage: string;
   };
 }
 
@@ -142,6 +147,14 @@ export interface ProofreaderBusyStateResponseMessage {
   };
 }
 
+export interface DevOpenSidepanelMessage {
+  type: 'proofly:open-sidepanel-dev';
+  payload?: {
+    tabId?: number | null;
+    action?: 'open' | 'close' | 'toggle';
+  };
+}
+
 export type ProoflyMessage =
   | IssuesUpdateMessage
   | ApplyIssueMessage
@@ -153,7 +166,8 @@ export type ProoflyMessage =
   | ClearBadgeMessage
   | ProofreadRequestMessage
   | ProofreaderBusyStateRequestMessage
-  | ProofreaderBusyStateResponseMessage;
+  | ProofreaderBusyStateResponseMessage
+  | DevOpenSidepanelMessage;
 
 export function toSidepanelIssue(
   elementId: string,

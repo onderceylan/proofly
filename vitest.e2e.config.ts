@@ -8,5 +8,6 @@ export default defineConfig({
     globalSetup: ['./e2e/helpers/global-setup.ts'],
     setupFiles: ['./e2e/helpers/setup.ts'],
     reporters: ['verbose'],
+    fileParallelism: false,
   },
 });

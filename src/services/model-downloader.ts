@@ -9,7 +9,7 @@ export type DownloadState =
   | 'error'
   | 'unavailable';
 
-export type ModelType = 'proofreader';
+export type ModelType = 'proofreader' | 'language-detector';
 
 export interface DownloadProgress {
   state: DownloadState;
@@ -21,12 +21,14 @@ export interface DownloadProgress {
 }
 
 export interface ModelDownloaderConfig {
+  expectedInputLanguages: string[];
   autoRetry: boolean;
   maxRetries: number;
   retryDelayMs: number;
 }
 
 export const DEFAULT_DOWNLOADER_CONFIG: ModelDownloaderConfig = {
+  expectedInputLanguages: ['en'],
   autoRetry: true,
   maxRetries: 3,
   retryDelayMs: 5000,
@@ -76,6 +78,7 @@ export function createModelDownloader(config: ModelDownloaderConfig = DEFAULT_DO
   let currentState: DownloadState = 'idle';
   let currentProgress = 0;
   let proofreaderInstance: Proofreader | null = null;
+  let languageDetectorInstance: LanguageDetector | null = null;
   let isDownloading = false;
 
   function updateState(
@@ -111,7 +114,9 @@ export function createModelDownloader(config: ModelDownloaderConfig = DEFAULT_DO
     }
 
     try {
-      const availability = await Proofreader.availability();
+      const availability = await Proofreader.availability({
+        expectedInputLanguages: config.expectedInputLanguages,
+      });
 
       if (availability === 'unavailable') {
         updateState('unavailable', 0, 'proofreader');
@@ -124,6 +129,69 @@ export function createModelDownloader(config: ModelDownloaderConfig = DEFAULT_DO
       const err = error as Error;
       updateState('error', 0, 'proofreader', err);
       throw err;
+    }
+  }
+
+  async function checkLanguageDetectorAvailability(): Promise<Availability> {
+    updateState('checking', 0, 'language-detector');
+
+    if (!('LanguageDetector' in window)) {
+      updateState('unavailable', 0, 'language-detector');
+      return 'unavailable';
+    }
+
+    try {
+      const availability = await LanguageDetector.availability();
+
+      if (availability === 'unavailable') {
+        updateState('unavailable', 0, 'language-detector');
+      } else if (availability === 'available') {
+        updateState('ready', 1, 'language-detector');
+      }
+
+      return availability;
+    } catch (error) {
+      const err = error as Error;
+      updateState('error', 0, 'language-detector', err);
+      throw err;
+    }
+  }
+
+  async function downloadLanguageDetector(signal?: AbortSignal): Promise<LanguageDetector | null> {
+    try {
+      const availability = await checkLanguageDetectorAvailability();
+
+      if (availability === 'unavailable') {
+        logger.warn('Language detector API not available, skipping');
+        return null;
+      }
+
+      if (availability === 'available' && languageDetectorInstance) {
+        return languageDetectorInstance;
+      }
+
+      updateState('downloading', 0, 'language-detector');
+
+      const detector = await LanguageDetector.create({
+        signal,
+        monitor(m) {
+          m.addEventListener('downloadprogress', (e) => {
+            updateState('downloading', e.loaded, 'language-detector');
+            emitter.emit('download-progress', {
+              state: 'downloading',
+              progress: e.loaded,
+              modelType: 'language-detector',
+            });
+          });
+        },
+      });
+
+      languageDetectorInstance = detector;
+      updateState('ready', 1, 'language-detector');
+      return detector;
+    } catch (error) {
+      logger.warn({ error }, 'Failed to download language detector, continuing without it');
+      return null;
     }
   }
 
@@ -152,6 +220,8 @@ export function createModelDownloader(config: ModelDownloaderConfig = DEFAULT_DO
         }
 
         if (availability === 'available') {
+          // Download language detector after proofreader is available
+          await downloadLanguageDetector(signal);
           updateState('ready', 1, 'proofreader');
           return proofreaderInstance!;
         }
@@ -162,6 +232,7 @@ export function createModelDownloader(config: ModelDownloaderConfig = DEFAULT_DO
         let modelWasDownloaded = false;
 
         const proofreader = await Proofreader.create({
+          expectedInputLanguages: config.expectedInputLanguages,
           signal,
           monitor(m) {
             m.addEventListener('downloadprogress', (e) => {
@@ -186,6 +257,9 @@ export function createModelDownloader(config: ModelDownloaderConfig = DEFAULT_DO
         });
 
         proofreaderInstance = proofreader;
+
+        // Download language detector after proofreader is ready
+        await downloadLanguageDetector(signal);
 
         updateState('ready', 1, 'proofreader');
         emitter.emit('download-complete', undefined);
@@ -238,6 +312,10 @@ export function createModelDownloader(config: ModelDownloaderConfig = DEFAULT_DO
       proofreaderInstance.destroy();
       proofreaderInstance = null;
     }
+    if (languageDetectorInstance) {
+      languageDetectorInstance.destroy();
+      languageDetectorInstance = null;
+    }
     updateState('idle', 0);
   }
 
@@ -262,6 +340,7 @@ export function createModelDownloader(config: ModelDownloaderConfig = DEFAULT_DO
   return {
     on: emitter.on.bind(emitter),
     checkProofreaderAvailability,
+    checkLanguageDetectorAvailability,
     download,
     cancel,
     reset,

@@ -162,6 +162,14 @@ vi.mock('../services/logger.ts', () => ({
   },
 }));
 
+vi.mock('../services/language-detector.ts', () => ({
+  createLanguageDetector: vi.fn(),
+  createLanguageDetectorAdapter: vi.fn(),
+  createLanguageDetectionService: vi.fn(() => ({
+    detectLanguage: vi.fn(async () => 'en'),
+  })),
+}));
+
 import {
   emitProofreadControlEvent,
   type ProofreadLifecycleReason,
@@ -252,6 +260,8 @@ describe('ProofreadingManager lifecycle reporting', () => {
       debounceMs: 400,
       forced: true,
       queueLength: 2,
+      language: 'en',
+      fallbackLanguage: 'en',
     });
 
     expect(emitProofreadControlEvent).toHaveBeenCalledWith(
@@ -264,6 +274,8 @@ describe('ProofreadingManager lifecycle reporting', () => {
         queueLength: 2,
         debounceMs: 400,
         forced: true,
+        language: 'en',
+        fallbackLanguage: 'en',
       })
     );
   });

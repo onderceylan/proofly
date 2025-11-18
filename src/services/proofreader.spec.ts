@@ -71,7 +71,9 @@ describe('proofreader service', () => {
     const { availabilityMock } = mockProofreaderGlobals('downloadable');
     const result = await checkProofreaderAvailability();
     expect(result).toBe('downloadable');
-    expect(availabilityMock).toHaveBeenCalledWith();
+    expect(availabilityMock).toHaveBeenCalledWith({
+      expectedInputLanguages: DEFAULT_PROOFREADER_CONFIG.expectedInputLanguages,
+    });
   });
 
   it('throws when creating proofreader if API unavailable', async () => {

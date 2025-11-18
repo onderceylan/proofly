@@ -154,7 +154,10 @@ export function onStorageChange<K extends keyof StorageData>(
 
   const listener = (changes: { [key: string]: chrome.storage.StorageChange }, areaName: string) => {
     if (areaName === expectedArea && changes[key]) {
-      callback(changes[key].newValue, changes[key].oldValue);
+      const change = changes[key];
+      const newValue = change.newValue as StorageData[K];
+      const oldValue = change.oldValue as StorageData[K];
+      callback(newValue, oldValue);
     }
   };
 

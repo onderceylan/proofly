@@ -62,6 +62,8 @@ export class ModelDownloaderComponent extends HTMLElement {
       }
 
       const proofreaderAvailability = await this.downloader.checkProofreaderAvailability();
+      // Check language detector availability to trigger download if needed
+      await this.downloader.checkLanguageDetectorAvailability();
 
       if (proofreaderAvailability === 'unavailable') {
         if (hasDownloadedModel) {
@@ -146,7 +148,8 @@ export class ModelDownloaderComponent extends HTMLElement {
     this.elements.progress.value = progress.progress;
 
     const percent = Math.floor(progress.progress * 100);
-    const modelLabel = 'Proofreader';
+    const modelLabel =
+      progress.modelType === 'language-detector' ? 'Language Detection' : 'Proofreader';
     let text = `${modelLabel}: ${percent}%`;
 
     if (progress.state === 'downloading' && progress.bytesDownloaded && progress.totalBytes) {
@@ -209,7 +212,7 @@ export class ModelDownloaderComponent extends HTMLElement {
   private showSuccess() {
     if (!this.elements.container || !this.elements.status) return;
 
-    this.elements.status.textContent = '✓ Proofreader model ready';
+    this.elements.status.textContent = '✓ Models ready';
     this.elements.status.style.display = 'block';
     this.elements.status.className = 'status success';
     this.hideProgress();
