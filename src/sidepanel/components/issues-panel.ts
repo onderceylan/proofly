@@ -176,7 +176,7 @@ export class ProoflyIssuesPanel extends HTMLElement {
   private renderIssueCard(group: IssueElementGroup, issue: SidepanelIssue): string {
     const colors = getCorrectionTypeColor(issue.type);
     const original = this.escapeHtml(issue.originalText || '(empty)');
-    const replacement = this.escapeHtml(issue.replacementText || '(no change)');
+    const replacement = this.escapeHtml(issue.replacementText || '(empty)');
     const explanation = issue.explanation
       ? `<p class="issue__explanation">${this.escapeHtml(issue.explanation)}</p>`
       : '';
