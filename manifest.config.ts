@@ -35,7 +35,7 @@ export default defineManifest({
       run_at: 'document_idle',
     },
   ],
-  permissions: ['sidePanel', 'tabs', 'contentSettings', 'storage', 'contextMenus'],
+  permissions: ['sidePanel', 'tabs', 'storage', 'contextMenus'],
   side_panel: {
     default_path: 'src/sidepanel/index.html',
   },
