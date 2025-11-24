@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.5](https://github.com/onderceylan/proofly/compare/v0.4.4...v0.4.5) (2025-11-24)
+
+
+### Continuous Integration
+
+* add signed crx artifacts to the releases ([#18](https://github.com/onderceylan/proofly/issues/18)) ([66230a0](https://github.com/onderceylan/proofly/commit/66230a011431b6089f3d8f1522dc7d7625c914fa))
+
 ## [0.4.4](https://github.com/onderceylan/proofly/compare/v0.4.3...v0.4.4) (2025-11-24)
 
 

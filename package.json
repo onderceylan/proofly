@@ -3,7 +3,7 @@
   "displayName": "Proofly – Private AI Writing, Proofreading & Grammar Assistant",
   "description": "A free, lightweight, non-invasive AI grammar and proofreading extension that runs 100% on-device for total privacy and offline use.",
   "type": "module",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "private": true,
   "scripts": {
     "dev": "vite",
