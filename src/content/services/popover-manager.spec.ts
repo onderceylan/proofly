@@ -9,6 +9,7 @@ const mockPopover = {
   remove: vi.fn(),
   addEventListener: vi.fn(),
   removeEventListener: vi.fn(),
+  setCorrection: vi.fn(),
 };
 
 (globalThis as any).document = {
@@ -26,6 +27,7 @@ vi.mock('../components/correction-popover.ts', () => ({
     remove = vi.fn();
     addEventListener = vi.fn();
     removeEventListener = vi.fn();
+    setCorrection = vi.fn();
   },
 }));
 
@@ -76,12 +78,9 @@ describe('PopoverManager', () => {
 
       const popover = (manager as any).popover;
       expect(popover).toBeTruthy();
-      expect(popover.show).toHaveBeenCalledWith({
-        element,
-        correction,
-        issueText: 'error',
-        x: 100,
-        y: 200,
+      expect(popover.setCorrection).toHaveBeenCalledWith(correction, 'error', expect.any(Function));
+      expect(popover.show).toHaveBeenCalledWith(100, 200, {
+        anchorElement: element,
         positionResolver: undefined,
       });
     });
@@ -107,12 +106,9 @@ describe('PopoverManager', () => {
       manager.show(element, correction, 'error', 100, 200, positionResolver);
 
       const popover = (manager as any).popover;
-      expect(popover.show).toHaveBeenCalledWith({
-        element,
-        correction,
-        issueText: 'error',
-        x: 100,
-        y: 200,
+      expect(popover.setCorrection).toHaveBeenCalledWith(correction, 'error', expect.any(Function));
+      expect(popover.show).toHaveBeenCalledWith(100, 200, {
+        anchorElement: element,
         positionResolver,
       });
     });

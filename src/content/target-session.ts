@@ -148,6 +148,16 @@ export class TargetSession {
     this.hooks.onUnderlineDoubleClick(issueId, issue);
   };
 
+  private readonly handleUnderlinePointerDown = (event: PointerEvent) => {
+    const node = event.target as HTMLElement | null;
+    if (!node || !node.classList.contains('u')) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    this.target.focus({ preventScroll: true });
+  };
+
   private readonly handleUnderlineKeyDown = (event: KeyboardEvent) => {
     if (this.autofixOnDoubleClick) {
       return;
@@ -215,6 +225,9 @@ export class TargetSession {
     this.target.addEventListener('scroll', this.handleScroll, {
       passive: true,
     });
+    underlines.addEventListener('pointerdown', this.handleUnderlinePointerDown, {
+      capture: true,
+    });
     underlines.addEventListener('click', this.handleUnderlineClick);
     underlines.addEventListener('dblclick', this.handleUnderlineDoubleClick);
     underlines.addEventListener('wheel', this.handleOverlayWheel, {
@@ -258,6 +271,13 @@ export class TargetSession {
     }
     this.raf.cancel();
     this.activeIssueId = null;
+    this.overlay.elements.underlines.removeEventListener(
+      'pointerdown',
+      this.handleUnderlinePointerDown,
+      {
+        capture: true,
+      }
+    );
     this.overlay.elements.underlines.removeEventListener('click', this.handleUnderlineClick);
     this.overlay.elements.underlines.removeEventListener(
       'dblclick',

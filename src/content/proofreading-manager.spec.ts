@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ProofreadingManager } from './proofreading-manager.ts';
 import {
   emitProofreadControlEvent,
@@ -128,7 +128,29 @@ describe('ProofreadingManager', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubGlobal('document', {
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      createRange: () => ({
+        setStart: vi.fn(),
+        setEnd: vi.fn(),
+        getClientRects: () => ({ length: 0 }),
+        getBoundingClientRect: () => new DOMRect(),
+      }),
+    });
+    vi.stubGlobal(
+      'HTMLInputElement',
+      class HTMLInputElement {} as unknown as typeof HTMLInputElement
+    );
+    vi.stubGlobal(
+      'HTMLTextAreaElement',
+      class HTMLTextAreaElement {} as unknown as typeof HTMLTextAreaElement
+    );
     manager = new ProofreadingManager();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   describe('initialize', () => {

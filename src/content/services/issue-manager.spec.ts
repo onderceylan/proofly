@@ -4,31 +4,35 @@ import type { ProofreadCorrection } from '../../shared/types.ts';
 
 vi.mock('../../shared/messages/issues.ts', () => ({
   resolveElementKind: vi.fn(() => 'input'),
-  toSidepanelIssue: vi.fn((correction) => ({
-    id: correction.id || 'issue-1',
-    text: 'error',
-    correction: correction.correction,
-    type: correction.type,
+  toSidepanelIssue: vi.fn((elementId, correction, originalText, issueId) => ({
+    id: issueId,
+    elementId,
+    originalText,
+    replacementText: correction.correction,
+    type: correction.type ?? 'spelling',
   })),
   normalizeIssueLabel: vi.fn((type) => type || 'spelling'),
 }));
 
 const mockChrome = {
   runtime: {
-    sendMessage: vi.fn(() => Promise.resolve().catch(() => {})),
+    sendMessage: vi.fn(() => Promise.resolve()),
   },
 };
 
 (globalThis as any).chrome = mockChrome;
 
 function createMockElement(id: string): HTMLElement {
-  return { id } as HTMLElement;
+  return {
+    id,
+    compareDocumentPosition: () => 0,
+  } as unknown as HTMLElement;
 }
 
-function createMockCorrection(correctionText: string): ProofreadCorrection {
+function createMockCorrection(correctionText: string, offset = 0): ProofreadCorrection {
   return {
-    startIndex: 0,
-    endIndex: 5,
+    startIndex: offset,
+    endIndex: offset + 5,
     correction: correctionText,
   };
 }
@@ -98,12 +102,12 @@ describe('IssueManager', () => {
 
       manager.setCorrections(element, [correction]);
 
-      expect(manager.getCorrection(element, 'corr-1')).toBe(correction);
+      expect(manager.getCorrection(element, '0:5:0')).toBe(correction);
     });
 
     it('should return undefined for unknown correction ID', () => {
       const element = createMockElement('elem-1');
-      expect(manager.getCorrection(element, 'unknown')).toBeUndefined();
+      expect(manager.getCorrection(element, 'unknown')).toBeNull();
     });
   });
 
@@ -150,9 +154,7 @@ describe('IssueManager', () => {
   });
 
   describe('scheduleIssuesUpdate', () => {
-    it('should debounce issues update', () => {
-      vi.useFakeTimers();
-
+    it('should debounce issues update', async () => {
       const element = createMockElement('elem-1');
       manager.setCorrections(element, [createMockCorrection('corr-1')]);
 
@@ -162,11 +164,9 @@ describe('IssueManager', () => {
 
       expect(mockChrome.runtime.sendMessage).not.toHaveBeenCalled();
 
-      vi.advanceTimersByTime(100);
+      await Promise.resolve();
 
       expect(mockChrome.runtime.sendMessage).toHaveBeenCalledTimes(1);
-
-      vi.useRealTimers();
     });
 
     it('should emit immediately when immediate flag is true', () => {

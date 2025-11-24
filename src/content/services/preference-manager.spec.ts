@@ -12,7 +12,7 @@ const mockStorage = {
 vi.mock('../../shared/utils/storage.ts', () => ({
   getStorageValues: vi.fn(async (keys) => {
     const defaults: Record<string, any> = {
-      correctionTypes: ['spelling', 'grammar'],
+      enabledCorrectionTypes: ['spelling', 'grammar'],
       correctionColors: {},
       underlineStyle: 'wavy',
       autoCorrect: true,
@@ -40,6 +40,11 @@ vi.mock('../../shared/utils/correction-types.ts', () => ({
     spelling: { color: '#ff0000', background: '#fff0f0', border: '#ffcccc' },
   })),
   setActiveCorrectionColors: vi.fn(),
+  ALL_CORRECTION_TYPES: ['spelling', 'grammar'],
+  getDefaultCorrectionColorConfig: vi.fn(() => ({
+    spelling: { color: '#ff0000', background: '#fff0f0', border: '#ffcccc' },
+    grammar: { color: '#0000ff', background: '#f0f0ff', border: '#ccccff' },
+  })),
 }));
 
 describe('PreferenceManager', () => {

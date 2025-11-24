@@ -11,20 +11,24 @@ const mockController = {
   getCorrections: vi.fn(() => []),
   isRestoringFromHistory: vi.fn(() => false),
   cancelPendingProofreads: vi.fn(),
+  dispose: vi.fn(),
 };
 
 vi.mock('../../shared/proofreading/controller.ts', () => ({
   createProofreadingController: vi.fn(() => mockController),
 }));
 
+const mockLanguageDetectionService = {
+  detectLanguage: vi.fn(async () => 'en'),
+  destroy: vi.fn(),
+};
+
 vi.mock('../../services/language-detector.ts', () => ({
   createLanguageDetector: vi.fn(async () => ({
     detect: vi.fn(async () => ({ detectedLanguage: 'en', confidence: 0.9 })),
   })),
   createLanguageDetectorAdapter: vi.fn((detector) => detector),
-  createLanguageDetectionService: vi.fn((_adapter) => ({
-    detectLanguage: vi.fn(async () => 'en'),
-  })),
+  createLanguageDetectionService: vi.fn((_adapter) => mockLanguageDetectionService),
 }));
 
 const mockChrome = {
@@ -122,12 +126,7 @@ describe('ContentProofreadingService', () => {
 
       await service.proofread(element);
 
-      expect(mockController.proofread).toHaveBeenCalledWith(
-        element,
-        expect.objectContaining({
-          force: false,
-        })
-      );
+      expect(mockController.proofread).toHaveBeenCalledWith(element, undefined);
     });
 
     it('should pass force option to controller', async () => {
@@ -214,10 +213,12 @@ describe('ContentProofreadingService', () => {
   });
 
   describe('destroy', () => {
-    it('should cleanup resources', () => {
+    it('should cleanup resources', async () => {
+      await service.initialize();
       service.destroy();
 
-      expect(service).toBeDefined();
+      expect(mockController.dispose).toHaveBeenCalled();
+      expect(mockLanguageDetectionService.destroy).toHaveBeenCalled();
     });
   });
 });

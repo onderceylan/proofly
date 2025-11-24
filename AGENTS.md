@@ -98,6 +98,7 @@ npm run format
 ### Iteration Testing Checklist
 
 - On every feature/fix iteration run `npm run typecheck` followed by `npm test` to catch regressions early.
+- Always inspect the full console output of `npm run test` (pipe to a log if needed) instead of relying solely on the exit status.
 - When adding a brand-new e2e scenario, temporarily focus it with `test.only(...)`, run `npm run test:e2e`, and remove the focus flag before committing.
 
 ### Standard Testing Workflow for Content Scripts

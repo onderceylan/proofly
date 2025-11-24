@@ -10,15 +10,15 @@ export interface OverlayElements {
 export class ShadowOverlay {
   readonly elements: OverlayElements;
   private mounted = false;
+  private container: HTMLElement | null = null;
 
   constructor(private readonly target: HTMLTextAreaElement | HTMLInputElement) {
     const host = document.createElement('proofly-highlighter');
     host.setAttribute('role', 'presentation');
-    host.style.position = 'absolute';
+    host.style.position = 'fixed';
     host.style.pointerEvents = 'none';
     host.style.overflow = 'hidden';
     host.style.zIndex = computeZIndex(target);
-    host.style.inset = '0px';
 
     const shadow = host.attachShadow({ mode: 'open' });
     const style = document.createElement('style');
@@ -112,7 +112,7 @@ export class ShadowOverlay {
     if (this.mounted) {
       return;
     }
-    document.body.appendChild(this.elements.host);
+    this.syncContainer();
     this.mounted = true;
     this.updateLayout();
   }
@@ -123,16 +123,21 @@ export class ShadowOverlay {
     }
     this.elements.host.remove();
     this.mounted = false;
+    this.container = null;
   }
 
   updateLayout(): void {
+    if (!this.mounted) {
+      return;
+    }
+
+    this.syncContainer();
     const metrics = getBoxMetrics(this.target);
     const { host, container } = this.elements;
-    const { scrollX, scrollY } = window;
     host.style.width = `${metrics.rect.width}px`;
     host.style.height = `${metrics.rect.height}px`;
-    host.style.top = `${metrics.rect.top + scrollY}px`;
-    host.style.left = `${metrics.rect.left + scrollX}px`;
+    host.style.top = `${metrics.rect.top}px`;
+    host.style.left = `${metrics.rect.left}px`;
 
     container.style.top = `${metrics.border.top}px`;
     container.style.left = `${metrics.border.left}px`;
@@ -148,6 +153,30 @@ export class ShadowOverlay {
 
   getContainerClientRect(): DOMRect {
     return this.elements.container.getBoundingClientRect();
+  }
+
+  private syncContainer(): void {
+    const nextContainer = this.getOverlayContainer();
+    if (!nextContainer) {
+      return;
+    }
+
+    if (this.container === nextContainer && nextContainer.contains(this.elements.host)) {
+      return;
+    }
+
+    nextContainer.appendChild(this.elements.host);
+    this.container = nextContainer;
+  }
+
+  private getOverlayContainer(): HTMLElement | null {
+    const dialog = this.target.closest('dialog') as HTMLDialogElement | null;
+    if (dialog && dialog.open) {
+      return dialog;
+    }
+
+    const ownerDocument = this.target.ownerDocument ?? document;
+    return ownerDocument.body ?? document.body;
   }
 }
 

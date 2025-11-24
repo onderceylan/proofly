@@ -70,6 +70,13 @@ class MockElement {
     this.parent = null;
   }
 
+  contains(node: MockElement): boolean {
+    if (this === node) {
+      return true;
+    }
+    return this.children.some((child) => child.contains(node));
+  }
+
   setAttribute(name: string, value: string) {
     this.attributes.set(name, value);
   }
@@ -89,6 +96,10 @@ class MockBody {
   removeChild(node: MockElement) {
     this.children = this.children.filter((child) => child !== node);
     node.parent = null;
+  }
+
+  contains(node: MockElement): boolean {
+    return this.children.some((child) => child === node || child.contains(node));
   }
 }
 
@@ -151,7 +162,16 @@ describe('ShadowOverlay', () => {
     const target = {
       clientWidth: 200,
       clientHeight: 100,
+      scrollWidth: 200,
+      scrollHeight: 100,
+      scrollLeft: 0,
+      scrollTop: 0,
       getBoundingClientRect: () => new DOMRect(0, 0, 0, 0),
+      ownerDocument: document,
+      closest: () => null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      scrollBy: vi.fn(),
     } as unknown as HTMLTextAreaElement;
     return target;
   }
@@ -162,8 +182,8 @@ describe('ShadowOverlay', () => {
 
     expect(body.children).toHaveLength(1);
     const host = body.children[0];
-    expect(host.style.top).toBe(`${200 + 10}px`);
-    expect(host.style.left).toBe(`${100 + 5}px`);
+    expect(host.style.top).toBe('200px');
+    expect(host.style.left).toBe('100px');
     expect(host.style.zIndex).toBe('4');
   });
 
@@ -193,5 +213,20 @@ describe('ShadowOverlay', () => {
     overlay.detach();
 
     expect(body.children).toHaveLength(0);
+  });
+
+  it('mounts overlay inside open dialogs to keep clicks inside modal', () => {
+    const dialog = new MockElement('dialog') as unknown as HTMLDialogElement;
+    (dialog as any).open = true;
+    body.appendChild(dialog as unknown as MockElement);
+
+    const target = createTarget();
+    (target as any).closest = () => dialog;
+
+    const overlay = new ShadowOverlay(target);
+    overlay.attach();
+
+    expect(dialog.children).toContain(overlay.elements.host as unknown as MockElement);
+    expect(body.children).toContain(dialog as unknown as MockElement);
   });
 });
