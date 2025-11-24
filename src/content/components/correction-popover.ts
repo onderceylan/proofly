@@ -1,6 +1,11 @@
 import { getCorrectionTypeColor } from '../../shared/utils/correction-types.ts';
 import { createUniqueId } from '../utils.ts';
 
+const BaseHTMLElement: typeof HTMLElement =
+  typeof HTMLElement === 'undefined'
+    ? (class HTMLElementShim {} as unknown as typeof HTMLElement)
+    : HTMLElement;
+
 type AnchorState = {
   owns: string | null;
   controls: string | null;
@@ -11,7 +16,7 @@ type PositionResolver = () => { x: number; y: number } | null;
 const VIEWPORT_MARGIN = 10;
 const RESIZE_DEBOUNCE_MS = 180;
 
-export class CorrectionPopover extends HTMLElement {
+export class CorrectionPopover extends BaseHTMLElement {
   private readonly internals: ElementInternals | null;
   private contentElement: HTMLDivElement | null = null;
   private currentCorrection: ProofreadCorrection | null = null;
@@ -208,11 +213,18 @@ export class CorrectionPopover extends HTMLElement {
       </div>
     `;
 
+    const stopPointerEvent = (event: Event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
     const applyButton = content.querySelector('.apply-button');
     if (applyButton && this.currentCorrection && this.onApply) {
       const correction = this.currentCorrection;
       const handler = this.onApply;
-      applyButton.addEventListener('click', () => {
+      applyButton.addEventListener('pointerdown', stopPointerEvent);
+      applyButton.addEventListener('click', (event) => {
+        stopPointerEvent(event);
         handler(correction);
         this.hide();
       });
@@ -220,7 +232,9 @@ export class CorrectionPopover extends HTMLElement {
 
     const closeButton = content.querySelector('.close-button');
     if (closeButton) {
-      closeButton.addEventListener('click', () => {
+      closeButton.addEventListener('pointerdown', stopPointerEvent);
+      closeButton.addEventListener('click', (event) => {
+        stopPointerEvent(event);
         this.hide();
       });
     }
@@ -603,7 +617,9 @@ export class CorrectionPopover extends HTMLElement {
   }
 }
 
-customElements.define('proofly-correction-popover', CorrectionPopover);
+if (typeof customElements !== 'undefined' && !customElements.get('proofly-correction-popover')) {
+  customElements.define('proofly-correction-popover', CorrectionPopover);
+}
 
 function mergeIds(existing: string | null, id: string): string {
   const values = new Set<string>();

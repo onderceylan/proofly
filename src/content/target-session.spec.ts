@@ -195,6 +195,7 @@ describe('TargetSession', () => {
       clientHeight: 100,
       scrollWidth: 200,
       scrollHeight: 100,
+      focus: vi.fn(),
       addEventListener: listenerTarget.addEventListener,
       removeEventListener: listenerTarget.removeEventListener,
       getListener: listenerTarget.getListener,
@@ -225,6 +226,7 @@ describe('TargetSession', () => {
         preventDefault: () => {
           defaultPrevented.prevented = true;
         },
+        stopPropagation: vi.fn(),
         ...detail,
       } as unknown as MouseEvent);
       return defaultPrevented.prevented;
@@ -339,6 +341,31 @@ describe('TargetSession', () => {
 
     expect(hooks.onUnderlineDoubleClick).toHaveBeenCalledWith('fix-1', issues[0]);
     expect(hooks.onUnderlineClick).not.toHaveBeenCalled();
+  });
+
+  it('suppresses pointerdown events on underlines to keep focus inside target', () => {
+    const session = createSession();
+    session.attach();
+    session.setIssues([
+      { id: 'pointer-1', start: 0, end: 4, type: 'spelling', label: 'Pointer event' },
+    ]);
+
+    const pointerHandler = underlineListeners.get('pointerdown');
+    expect(pointerHandler).toBeDefined();
+
+    const preventDefault = vi.fn();
+    const stopPropagation = vi.fn();
+    pointerHandler?.({
+      preventDefault,
+      stopPropagation,
+      target: {
+        classList: { contains: (value: string) => value === 'u' },
+      },
+    } as unknown as PointerEvent);
+
+    expect(preventDefault).toHaveBeenCalled();
+    expect(stopPropagation).toHaveBeenCalled();
+    expect(target.focus).toHaveBeenCalledWith({ preventScroll: true });
   });
 
   it('detaches overlay and cleans up listeners', () => {
