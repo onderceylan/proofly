@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.3](https://github.com/onderceylan/proofly/compare/v0.4.2...v0.4.3) (2025-11-23)
+
+
+### Bug Fixes
+
+* remove redundant permission request ([#14](https://github.com/onderceylan/proofly/issues/14)) ([eef17c7](https://github.com/onderceylan/proofly/commit/eef17c75e7d923ea108201500179fdb1d58ebcdf))
+
 ## [0.4.2](https://github.com/onderceylan/proofly/compare/v0.4.1...v0.4.2) (2025-11-18)
 
 
