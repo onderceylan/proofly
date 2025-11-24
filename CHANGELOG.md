@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.4](https://github.com/onderceylan/proofly/compare/v0.4.3...v0.4.4) (2025-11-24)
+
+
+### Bug Fixes
+
+* prevent dialog close upon highlight or popover interaction ([#16](https://github.com/onderceylan/proofly/issues/16)) ([0937608](https://github.com/onderceylan/proofly/commit/0937608a1f58b884989da61d669c04d601a37f78))
+
 ## [0.4.3](https://github.com/onderceylan/proofly/compare/v0.4.2...v0.4.3) (2025-11-23)
 
 
