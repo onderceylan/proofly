@@ -401,9 +401,20 @@ src/
 │   ├── service-worker.ts
 │   └── message-handler.ts
 ├── content/
-│   ├── main.ts                  # <5KB entry
-│   └── components/              # Web components (Shadow DOM)
-├── services/                    # Shared services (pure functions)
+│   ├── main.ts                          # <5KB entry
+│   ├── components/                      # Web components (Shadow DOM)
+│   ├── handlers/                        # Target-specific handlers
+│   │   ├── target-handler.ts            # Handler interface
+│   │   ├── mirror-target-handler.ts     # For input/textarea (mirror overlay)
+│   │   └── direct-target-handler.ts     # For contenteditable (direct highlighting)
+│   ├── services/                        # Content script services
+│   │   ├── element-tracker.ts           # DOM observation & element registry
+│   │   ├── popover-manager.ts           # Popover UI lifecycle
+│   │   ├── preference-manager.ts        # Storage & settings management
+│   │   ├── issue-manager.ts             # Corrections & messages storage
+│   │   └── content-proofreading-service.ts  # Wraps ProofreadingController
+│   └── proofreading-manager.ts          # Coordinates all services
+├── services/                            # Shared services (pure functions)
 │   ├── proofreader.ts
 │   └── model-downloader.ts
 ├── popup/
@@ -412,13 +423,89 @@ src/
 ├── shared/
 │   ├── types.ts
 │   ├── constants.ts
-│   ├── utils/                   # Pure utility functions
+│   ├── proofreading/                    # Shared proofreading logic
+│   │   ├── controller.ts                # Core proofreading controller
+│   │   ├── target-selectors.ts          # Element validation utilities
+│   │   └── control-events.ts            # Lifecycle event system
+│   ├── utils/                           # Pure utility functions
 │   └── styles/
-│       ├── tokens.css           # Design tokens
+│       ├── tokens.css                   # Design tokens
 │       ├── reset.css
 │       └── mixins.css
 └── manifest.json
 ```
+
+#### Content Script Services
+
+The `src/content/services/` directory contains focused services that handle specific aspects of proofreading:
+
+**`element-tracker.ts`**
+
+- **Purpose**: DOM observation and element lifecycle management
+- **Responsibilities**:
+  - Sets up `MutationObserver` to detect added/removed elements
+  - Manages document-level event listeners (`input`, `focus`, `blur`)
+  - Maintains registry of tracked elements with unique IDs
+  - Provides element validation via shared `target-selectors.ts`
+- **Key Methods**: `initialize()`, `registerElement()`, `getElementId()`, `isProofreadTarget()`, `shouldAutoProofread()`
+
+**`content-proofreading-service.ts`**
+
+- **Purpose**: Wraps shared `ProofreadingController` with content-specific logic
+- **Responsibilities**:
+  - Integrates language detection service
+  - Implements `runProofread` dependency (handles `chrome.runtime.sendMessage`)
+  - Manages async proofreading queue
+  - Reports proofreader busy state to background
+  - Handles error messages (unsupported language, detection failures)
+- **Key Methods**: `initialize()`, `proofread()`, `scheduleProofread()`, `applyCorrection()`
+
+**`issue-manager.ts`**
+
+- **Purpose**: Manages corrections, messages, and issue broadcasting
+- **Responsibilities**:
+  - Stores corrections and error messages per element
+  - Maintains issue ID lookup for fast correction retrieval
+  - Emits issues updates to sidepanel/background via `chrome.runtime.sendMessage`
+  - Builds issue payloads with element metadata
+- **Key Methods**: `setCorrections()`, `getCorrection()`, `setMessage()`, `emitIssuesUpdate()`
+
+**`popover-manager.ts`**
+
+- **Purpose**: Manages correction popover UI lifecycle
+- **Responsibilities**:
+  - Creates and destroys `CorrectionPopover` component
+  - Controls visibility based on autofix settings
+  - Handles popover hide events
+  - Integrates with `ContentHighlighter`
+- **Key Methods**: `show()`, `hide()`, `updateVisibility()`, `setAutofixOnDoubleClick()`
+
+**`preference-manager.ts`**
+
+- **Purpose**: Centralized settings and storage management
+- **Responsibilities**:
+  - Loads initial preferences from `chrome.storage`
+  - Sets up storage change listeners
+  - Emits events when preferences change
+  - Manages correction types, colors, underline style, shortcuts
+- **Key Methods**: `initialize()`, `getEnabledCorrectionTypes()`, `getCorrectionColors()`, `buildIssuePalette()`
+
+#### Shared Proofreading Logic
+
+**`src/shared/proofreading/controller.ts`**
+
+- Core proofreading controller with debouncing, queueing, and undo integration
+- Used by `ContentProofreadingService` via dependency injection
+
+**`src/shared/proofreading/target-selectors.ts`**
+
+- Element validation utilities (`isProofreadTarget`, `shouldAutoProofread`)
+- Used by `ElementTracker` and `ProofreadingManager`
+
+**`src/shared/proofreading/control-events.ts`**
+
+- Lifecycle event system for proofreading operations
+- Emits events for monitoring and debugging
 
 ### Web Component Pattern
 
