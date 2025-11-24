@@ -23,6 +23,7 @@
     "@types/chrome": "^0.1.29",
     "@types/dom-chromium-ai": "^0.0.10",
     "@types/node": "^24.9.2",
+    "crx3": "^2.0.0",
     "eslint": "^9.39.1",
     "globals": "^15.15.0",
     "husky": "^9.1.7",

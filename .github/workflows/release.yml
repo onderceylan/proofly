@@ -50,6 +50,23 @@ jobs:
           version="$(node -p "require('./package.json').version")"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
+      - name: Create signed CRX artifact
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        env:
+          ARTIFACT_VERSION: ${{ steps.pkg.outputs.version }}
+          CRX_SIGNING_KEY_B64: ${{ secrets.CRX_SIGNING_KEY_B64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CRX_SIGNING_KEY_B64:-}" ]; then
+            echo "CRX_SIGNING_KEY_B64 secret is not configured" >&2
+            exit 1
+          fi
+          mkdir -p release
+          key_file="$(mktemp)"
+          trap 'rm -f "$key_file"' EXIT
+          echo "$CRX_SIGNING_KEY_B64" | base64 --decode > "$key_file"
+          npx crx3 dist -p "$key_file" -o "release/signed-proofly-${ARTIFACT_VERSION}.crx"
+
       - name: Generate artifact hash
         if: ${{ steps.release.outputs.release_created == 'true' }}
         env:
@@ -72,4 +89,5 @@ jobs:
             "${{ steps.release.outputs.tag_name }}" \
             "./release/crx-proofly-${{ steps.pkg.outputs.version }}.zip" \
             "./release/crx-proofly-${{ steps.pkg.outputs.version }}.zip.sha256" \
+            "./release/signed-proofly-${{ steps.pkg.outputs.version }}.crx" \
             --clobber
