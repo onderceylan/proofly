@@ -5,6 +5,7 @@ import './style.css';
 import { logger } from '../services/logger.ts';
 import { isModelReady } from '../shared/utils/storage.ts';
 import type {
+  ApplyAllIssuesMessage,
   IssuesStateRequestMessage,
   IssuesStateResponseMessage,
   IssuesUpdateMessage,
@@ -18,6 +19,7 @@ import { ProoflyIssuesPanel } from './components/issues-panel.ts';
 import { ensureProofreaderModelReady } from '../services/model-checker.ts';
 
 type ApplyIssueDetail = { elementId: string; issueId: string };
+type FixAllIssuesDetail = { elementId?: string };
 
 let panelElement: ProoflyIssuesPanel | null = null;
 let appContainer: HTMLDivElement | null = null;
@@ -253,8 +255,8 @@ function onOpenSettings(): void {
   });
 }
 
-function onFixAllIssues(): void {
-  void handleFixAllIssues();
+function onFixAllIssues(event: Event): void {
+  void handleFixAllIssues((event as CustomEvent<FixAllIssuesDetail>).detail?.elementId);
 }
 
 async function handleApplyIssue(event: CustomEvent<ApplyIssueDetail>): Promise<void> {
@@ -287,19 +289,27 @@ async function handleApplyIssue(event: CustomEvent<ApplyIssueDetail>): Promise<v
   }
 }
 
-async function handleFixAllIssues(): Promise<void> {
+async function handleFixAllIssues(elementId?: string): Promise<void> {
   if (!activeTabId) {
     logger.warn('Fix all issues requested without an active tab');
     return;
   }
 
   try {
-    await chrome.tabs.sendMessage(activeTabId, {
-      type: 'proofly:apply-all-issues',
-    });
-    logger.info({ tabId: activeTabId }, 'Fix all issues dispatched');
+    const message: ApplyAllIssuesMessage = elementId
+      ? {
+          type: 'proofly:apply-all-issues',
+          payload: { elementId },
+        }
+      : { type: 'proofly:apply-all-issues' };
+
+    await chrome.tabs.sendMessage(activeTabId, message);
+    logger.info({ tabId: activeTabId, elementId }, 'Fix all issues dispatched');
   } catch (error) {
-    logger.error({ error, tabId: activeTabId }, 'Failed to fix all issues from sidepanel');
+    logger.error(
+      { error, tabId: activeTabId, elementId },
+      'Failed to fix all issues from sidepanel'
+    );
   }
 }
 

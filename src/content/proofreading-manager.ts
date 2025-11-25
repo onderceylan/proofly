@@ -142,42 +142,77 @@ export class ProofreadingManager {
     this.issueManager.scheduleIssuesUpdate();
   }
 
-  applyAllIssues(): void {
+  applyAllIssues(elementId?: string): void {
+    if (elementId) {
+      const element = this.elementTracker.getElementById(elementId);
+      if (!element) {
+        logger.warn({ elementId }, 'Fix all requested for unknown element');
+        return;
+      }
+
+      const applied = this.applyAllIssuesForElement(element);
+      if (!applied) {
+        logger.info({ elementId }, 'Fix all requested but no issues are available for element');
+        return;
+      }
+
+      this.issueManager.scheduleIssuesUpdate();
+      logger.info({ elementId }, 'Applied all outstanding issues for element');
+      return;
+    }
+
     const elements = Array.from(this.targetHandlers.keys());
     if (elements.length === 0) {
       logger.info('Fix all requested but no issues are available');
       return;
     }
 
-    try {
-      for (const element of elements) {
-        if (!element) {
-          continue;
-        }
-
-        let safetyCounter = 0;
-        while (true) {
-          const corrections = this.proofreadingService.getCorrections(element);
-          if (!corrections || corrections.length === 0) {
-            break;
-          }
-
-          const [nextCorrection] = corrections;
-          this.proofreadingService.applyCorrection(element, nextCorrection);
-          safetyCounter += 1;
-
-          if (safetyCounter > 1000) {
-            logger.warn({ element }, 'Stopping bulk apply due to iteration safety limit');
-            break;
-          }
-        }
+    let appliedAny = false;
+    for (const element of elements) {
+      if (!element) {
+        continue;
       }
 
-      this.issueManager.scheduleIssuesUpdate();
-      logger.info('Applied all outstanding issues');
-    } finally {
-      // Busy state is managed by ContentProofreadingService
+      if (this.applyAllIssuesForElement(element)) {
+        appliedAny = true;
+      }
     }
+
+    if (!appliedAny) {
+      logger.info('Fix all requested but no issues are available');
+      return;
+    }
+
+    this.issueManager.scheduleIssuesUpdate();
+    logger.info('Applied all outstanding issues');
+  }
+
+  private applyAllIssuesForElement(element: HTMLElement): boolean {
+    let applied = false;
+    let safetyCounter = 0;
+
+    while (true) {
+      const corrections = this.proofreadingService.getCorrections(element);
+      if (!corrections || corrections.length === 0) {
+        break;
+      }
+
+      const [nextCorrection] = corrections;
+      if (!nextCorrection) {
+        break;
+      }
+
+      this.proofreadingService.applyCorrection(element, nextCorrection);
+      applied = true;
+      safetyCounter += 1;
+
+      if (safetyCounter > 1000) {
+        logger.warn({ element }, 'Stopping bulk apply due to iteration safety limit');
+        break;
+      }
+    }
+
+    return applied;
   }
 
   async proofreadActiveElement(): Promise<void> {

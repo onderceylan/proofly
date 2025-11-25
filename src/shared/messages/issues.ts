@@ -100,6 +100,9 @@ export interface ApplyIssueMessage {
 
 export interface ApplyAllIssuesMessage {
   type: 'proofly:apply-all-issues';
+  payload?: {
+    elementId?: string;
+  };
 }
 
 export interface ProofreaderStateMessage {

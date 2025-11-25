@@ -11,6 +11,10 @@ import type {
 const PANEL_HEADING = 'Suggested Corrections';
 const EMPTY_STATE_MESSAGE = `Start typing on the page to see proofreading suggestions.`;
 
+type FixAllIssuesEventDetail = {
+  elementId?: string;
+};
+
 export class ProoflyIssuesPanel extends HTMLElement {
   private readonly shadow: ShadowRoot;
   private state: IssuesUpdatePayload | null = null;
@@ -56,7 +60,28 @@ export class ProoflyIssuesPanel extends HTMLElement {
       }
       event.preventDefault();
       this.dispatchEvent(
-        new CustomEvent('fix-all-issues', {
+        new CustomEvent<FixAllIssuesEventDetail>('fix-all-issues', {
+          detail: {},
+          bubbles: true,
+          composed: true,
+        })
+      );
+      return;
+    }
+
+    const groupFixAllButton = target.closest<HTMLButtonElement>('.group__fix-all-btn');
+    if (groupFixAllButton) {
+      if (groupFixAllButton.disabled) {
+        return;
+      }
+      const elementId = groupFixAllButton.dataset.elementId;
+      if (!elementId) {
+        return;
+      }
+      event.preventDefault();
+      this.dispatchEvent(
+        new CustomEvent<FixAllIssuesEventDetail>('fix-all-issues', {
+          detail: { elementId },
           bubbles: true,
           composed: true,
         })
@@ -115,8 +140,8 @@ export class ProoflyIssuesPanel extends HTMLElement {
             <button
               type="button"
               class="panel-action-btn fix-all-btn"
-              title="Apply all corrections"
-              aria-label="Apply all corrections"
+              title="Apply all corrections for the page"
+              aria-label="Apply all corrections for the page"
               ${totalIssues === 0 ? 'disabled' : ''}
             >
               <img src="${fixAllIconUrl}" alt="" />
@@ -127,7 +152,7 @@ export class ProoflyIssuesPanel extends HTMLElement {
           </div>
         </header>
         <section class="panel__content">
-          ${hasGroups ? this.renderIssueGroups(groups) : this.renderEmptyState()}
+          ${hasGroups ? this.renderIssueGroups(groups, fixAllIconUrl) : this.renderEmptyState()}
         </section>
       </div>
     `;
@@ -137,18 +162,33 @@ export class ProoflyIssuesPanel extends HTMLElement {
     return `<span class="issue__badge issue__count">${totalIssues}</span>`;
   }
 
-  private renderIssueGroups(groups: IssueElementGroup[]): string {
+  private renderIssueGroups(groups: IssueElementGroup[], fixAllIconUrl: string): string {
     return groups
       .map((group) => {
-        const heading = describeGroupHeading(group);
-        const header = heading ? `<h2 class="group__title">${this.escapeHtml(heading)}</h2>` : '';
+        const heading = describeGroupHeading(group) || 'Current field';
+        const escapedHeading = this.escapeHtml(heading);
+        const fixAllLabel = this.escapeHtml(`Apply all corrections for ${heading}`);
+        const header = `<h2 class="group__title">${escapedHeading}</h2>`;
         const cards = group.issues.map((issue) => this.renderIssueCard(group, issue)).join('');
         const notices = group.errors ? this.renderGroupMessages(group.errors) : '';
         const issuesContent =
           group.issues.length > 0 ? `<div class="group__issues">${cards}</div>` : '';
         return `
           <article class="group" data-element-id="${group.elementId}">
-            ${header}
+            <div class="group__header">
+              ${header}
+              <button
+                type="button"
+                class="group__fix-all-btn"
+                data-element-id="${group.elementId}"
+                title="${fixAllLabel}"
+                aria-label="${fixAllLabel}"
+                ${group.issues.length === 0 ? 'disabled' : ''}
+              >
+                <img src="${fixAllIconUrl}" alt="" />
+                <span>Apply all</span>
+              </button>
+            </div>
             ${notices}
             ${issuesContent}
           </article>
@@ -339,11 +379,54 @@ export class ProoflyIssuesPanel extends HTMLElement {
         box-shadow: var(--shadow-sm);
       }
 
+      .group__header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--spacing-sm);
+      }
+
       .group__title {
         margin: 0;
         font-size: var(--font-size-sm);
         font-weight: var(--font-weight-semibold);
         color: var(--color-text-secondary);
+        flex: 1;
+      }
+
+      .group__fix-all-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--color-border);
+        background: var(--color-surface-subtle);
+        color: var(--color-text-secondary);
+        padding: 0.4rem 0.6rem;
+        font-size: var(--font-size-xs);
+        font-weight: var(--font-weight-medium);
+        cursor: pointer;
+        transition: background var(--transition-base), color var(--transition-base), border-color var(--transition-base), box-shadow var(--transition-base);
+      }
+
+      .group__fix-all-btn:hover,
+      .group__fix-all-btn:focus-visible {
+        border-color: var(--color-primary);
+        color: var(--color-primary);
+        box-shadow: 0 0 0 3px var(--color-primary-ring);
+      }
+
+      .group__fix-all-btn[disabled] {
+        cursor: not-allowed;
+        opacity: 0.6;
+        border-color: var(--color-border);
+        color: var(--color-text-tertiary);
+        box-shadow: none;
+      }
+
+      .group__fix-all-btn img {
+        width: 1.2rem;
+        height: 1.2rem;
       }
 
       .group__issues {

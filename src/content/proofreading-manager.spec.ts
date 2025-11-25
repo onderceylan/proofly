@@ -225,6 +225,12 @@ describe('ProofreadingManager', () => {
 
       expect(manager).toBeDefined();
     });
+
+    it('should handle element-scoped bulk apply', () => {
+      manager.applyAllIssues('element-123');
+
+      expect(manager).toBeDefined();
+    });
   });
 
   describe('proofreadActiveElement', () => {
