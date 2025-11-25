@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/onderceylan/proofly/compare/v0.4.5...v0.5.0) (2025-11-25)
+
+
+### Features
+
+* improve issue and resolution experience in sidebar ([#20](https://github.com/onderceylan/proofly/issues/20)) ([14011f8](https://github.com/onderceylan/proofly/commit/14011f8e2aeed1a1579ccad7681299986a1ddb7c))
+
 ## [0.4.5](https://github.com/onderceylan/proofly/compare/v0.4.4...v0.4.5) (2025-11-24)
 
 
