@@ -56,6 +56,7 @@ export class TargetSession {
   private issues: Issue[] = [];
   private colorPalette: IssueColorPalette = DEFAULT_COLOR_PALETTE;
   private activeIssueId: string | null = null;
+  private previewIssueId: string | null = null;
   private underlineStyle: UnderlineStyle = 'solid';
   private autofixOnDoubleClick: boolean = false;
 
@@ -302,6 +303,9 @@ export class TargetSession {
     if (this.activeIssueId && !issues.some((issue) => issue.id === this.activeIssueId)) {
       this.activeIssueId = null;
     }
+    if (this.previewIssueId && !issues.some((issue) => issue.id === this.previewIssueId)) {
+      this.previewIssueId = null;
+    }
     if (issues.length > 0) {
       this.ensureOverlayMounted();
     } else {
@@ -337,6 +341,19 @@ export class TargetSession {
 
   clearActiveIssue(): void {
     this.setActiveIssue(null);
+  }
+
+  setPreviewIssue(issueId: string | null): void {
+    if (this.previewIssueId === issueId) {
+      return;
+    }
+    this.previewIssueId = issueId;
+    this.needsRender = true;
+    this.raf.schedule();
+  }
+
+  clearPreviewIssue(): void {
+    this.setPreviewIssue(null);
   }
 
   private flushFrame(): void {
@@ -479,6 +496,7 @@ export class TargetSession {
       lineHeight: this.metrics.lineHeight,
       margin: VIRTUALIZATION_MARGIN,
       activeIssueId: this.activeIssueId,
+      previewIssueId: this.previewIssueId,
       palette: this.colorPalette,
       underlineStyle: this.underlineStyle,
     });

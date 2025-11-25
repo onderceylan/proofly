@@ -14,12 +14,14 @@ import type {
   ProofreaderStateUpdateMessage,
   ProofreaderBusyStateRequestMessage,
   ProofreaderBusyStateResponseMessage,
+  PreviewIssueMessage,
 } from '../shared/messages/issues.ts';
 import { ProoflyIssuesPanel } from './components/issues-panel.ts';
 import { ensureProofreaderModelReady } from '../services/model-checker.ts';
 
 type ApplyIssueDetail = { elementId: string; issueId: string };
 type FixAllIssuesDetail = { elementId?: string };
+type PreviewIssueDetail = { issueId: string; elementId: string; active: boolean };
 
 let panelElement: ProoflyIssuesPanel | null = null;
 let appContainer: HTMLDivElement | null = null;
@@ -90,6 +92,7 @@ function mountIssuesPanel(): void {
   panelElement.addEventListener('apply-issue', onApplyIssue);
   panelElement.addEventListener('open-settings', onOpenSettings);
   panelElement.addEventListener('fix-all-issues', onFixAllIssues);
+  panelElement.addEventListener('preview-issue', onPreviewIssue);
 
   const section = document.createElement('div');
   section.className = 'prfly-section prfly-section--muted';
@@ -259,6 +262,10 @@ function onFixAllIssues(event: Event): void {
   void handleFixAllIssues((event as CustomEvent<FixAllIssuesDetail>).detail?.elementId);
 }
 
+function onPreviewIssue(event: Event): void {
+  void handlePreviewIssue((event as CustomEvent<PreviewIssueDetail>).detail);
+}
+
 async function handleApplyIssue(event: CustomEvent<ApplyIssueDetail>): Promise<void> {
   if (!activeTabId) {
     logger.warn('Apply issue requested without an active tab');
@@ -310,6 +317,31 @@ async function handleFixAllIssues(elementId?: string): Promise<void> {
       { error, tabId: activeTabId, elementId },
       'Failed to fix all issues from sidepanel'
     );
+  }
+}
+
+async function handlePreviewIssue(detail?: PreviewIssueDetail): Promise<void> {
+  if (!detail) {
+    return;
+  }
+
+  if (!activeTabId) {
+    return;
+  }
+
+  const message: PreviewIssueMessage = {
+    type: 'proofly:preview-issue',
+    payload: {
+      elementId: detail.elementId,
+      issueId: detail.issueId,
+      active: detail.active,
+    },
+  };
+
+  try {
+    await chrome.tabs.sendMessage(activeTabId, message);
+  } catch (error) {
+    logger.warn({ error, tabId: activeTabId }, 'Failed to preview issue from sidepanel');
   }
 }
 

@@ -27,6 +27,7 @@ export interface RenderOptions {
   lineHeight: number;
   margin: number;
   activeIssueId?: string | null;
+  previewIssueId?: string | null;
   palette: CorrectionColorThemeMap;
   underlineStyle: UnderlineStyle;
 }
@@ -88,10 +89,16 @@ export class UnderlineRenderer {
       element.dataset.underlineStyle = options.underlineStyle;
       element.dataset.type = descriptor.type;
       const isActive = descriptor.issueId === options.activeIssueId;
+      const isPreview = descriptor.issueId === options.previewIssueId;
       if (isActive) {
         element.dataset.active = 'true';
       } else {
         delete element.dataset.active;
+      }
+      if (isPreview) {
+        element.dataset.preview = 'true';
+      } else {
+        delete element.dataset.preview;
       }
       element.setAttribute('role', 'button');
       element.tabIndex = 0;

@@ -77,7 +77,8 @@ export class ShadowOverlay {
         border-radius: 999px;
         background-color: currentColor;
       }
-      .u[data-active="true"]::before {
+      .u[data-active="true"]::before,
+      .u[data-preview="true"]::before {
         opacity: 1;
       }
       .u[data-underline-style="solid"]::after {

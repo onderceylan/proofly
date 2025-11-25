@@ -14,11 +14,21 @@ const EMPTY_STATE_MESSAGE = `Start typing on the page to see proofreading sugges
 type FixAllIssuesEventDetail = {
   elementId?: string;
 };
+type PreviewIssueEventDetail = {
+  issueId: string;
+  elementId: string;
+  active: boolean;
+};
 
 export class ProoflyIssuesPanel extends HTMLElement {
   private readonly shadow: ShadowRoot;
   private state: IssuesUpdatePayload | null = null;
   private readonly handleClickBound = this.handleClick.bind(this);
+  private readonly handlePointerOverBound = this.handlePointerOver.bind(this);
+  private readonly handlePointerOutBound = this.handlePointerOut.bind(this);
+  private readonly handleFocusInBound = this.handleFocusIn.bind(this);
+  private readonly handleFocusOutBound = this.handleFocusOut.bind(this);
+  private currentPreview: { issueId: string; elementId: string } | null = null;
 
   constructor() {
     super();
@@ -27,11 +37,19 @@ export class ProoflyIssuesPanel extends HTMLElement {
 
   connectedCallback(): void {
     this.shadow.addEventListener('click', this.handleClickBound);
+    this.shadow.addEventListener('pointerover', this.handlePointerOverBound);
+    this.shadow.addEventListener('pointerout', this.handlePointerOutBound);
+    this.shadow.addEventListener('focusin', this.handleFocusInBound);
+    this.shadow.addEventListener('focusout', this.handleFocusOutBound);
     this.render();
   }
 
   disconnectedCallback(): void {
     this.shadow.removeEventListener('click', this.handleClickBound);
+    this.shadow.removeEventListener('pointerover', this.handlePointerOverBound);
+    this.shadow.removeEventListener('pointerout', this.handlePointerOutBound);
+    this.shadow.removeEventListener('focusin', this.handleFocusInBound);
+    this.shadow.removeEventListener('focusout', this.handleFocusOutBound);
   }
 
   setState(state: IssuesUpdatePayload | null): void {
@@ -106,6 +124,66 @@ export class ProoflyIssuesPanel extends HTMLElement {
     this.emitApplyIssue(issueId, elementId);
   }
 
+  private handlePointerOver(event: Event): void {
+    const pointerEvent = event as PointerEvent;
+    const issue = this.resolveIssueTarget(pointerEvent.target);
+    if (!issue) {
+      return;
+    }
+
+    const related = pointerEvent.relatedTarget as HTMLElement | null;
+    if (related && issue.node.contains(related)) {
+      return;
+    }
+
+    this.updatePreviewState(issue.issueId, issue.elementId, true);
+  }
+
+  private handlePointerOut(event: Event): void {
+    const pointerEvent = event as PointerEvent;
+    const issue = this.resolveIssueTarget(pointerEvent.target);
+    if (!issue) {
+      return;
+    }
+
+    const related = pointerEvent.relatedTarget as HTMLElement | null;
+    if (related && issue.node.contains(related)) {
+      return;
+    }
+
+    this.updatePreviewState(issue.issueId, issue.elementId, false);
+  }
+
+  private handleFocusIn(event: Event): void {
+    const focusEvent = event as FocusEvent;
+    const issue = this.resolveIssueTarget(focusEvent.target);
+    if (!issue) {
+      return;
+    }
+
+    const related = focusEvent.relatedTarget as HTMLElement | null;
+    if (related && issue.node.contains(related)) {
+      return;
+    }
+
+    this.updatePreviewState(issue.issueId, issue.elementId, true);
+  }
+
+  private handleFocusOut(event: Event): void {
+    const focusEvent = event as FocusEvent;
+    const issue = this.resolveIssueTarget(focusEvent.target);
+    if (!issue) {
+      return;
+    }
+
+    const related = focusEvent.relatedTarget as HTMLElement | null;
+    if (related && issue.node.contains(related)) {
+      return;
+    }
+
+    this.updatePreviewState(issue.issueId, issue.elementId, false);
+  }
+
   private emitApplyIssue(issueId: string, elementId: string): void {
     this.dispatchEvent(
       new CustomEvent('apply-issue', {
@@ -114,6 +192,89 @@ export class ProoflyIssuesPanel extends HTMLElement {
         composed: true,
       })
     );
+  }
+
+  private resolveIssueTarget(target: EventTarget | null): {
+    node: HTMLElement;
+    issueId: string;
+    elementId: string;
+  } | null {
+    if (!(target instanceof HTMLElement)) {
+      return null;
+    }
+
+    const node = target.closest<HTMLElement>('.issue');
+    if (!node) {
+      return null;
+    }
+
+    const issueId = node.getAttribute('data-issue-id');
+    const elementId = node.getAttribute('data-element-id');
+    if (!issueId || !elementId) {
+      return null;
+    }
+
+    return { node, issueId, elementId };
+  }
+
+  private updatePreviewState(issueId: string, elementId: string, active: boolean): void {
+    if (active) {
+      if (
+        this.currentPreview &&
+        this.currentPreview.issueId === issueId &&
+        this.currentPreview.elementId === elementId
+      ) {
+        return;
+      }
+
+      if (this.currentPreview) {
+        this.dispatchPreviewIssue({
+          issueId: this.currentPreview.issueId,
+          elementId: this.currentPreview.elementId,
+          active: false,
+        });
+      }
+
+      this.currentPreview = { issueId, elementId };
+      this.dispatchPreviewIssue({ issueId, elementId, active: true });
+      return;
+    }
+
+    if (
+      this.currentPreview &&
+      this.currentPreview.issueId === issueId &&
+      this.currentPreview.elementId === elementId
+    ) {
+      this.dispatchPreviewIssue({ issueId, elementId, active: false });
+      this.currentPreview = null;
+    }
+  }
+
+  private dispatchPreviewIssue(detail: PreviewIssueEventDetail): void {
+    this.dispatchEvent(
+      new CustomEvent<PreviewIssueEventDetail>('preview-issue', {
+        detail,
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+
+  private reconcilePreviewState(): void {
+    if (!this.currentPreview) {
+      return;
+    }
+
+    const selector = `.issue[data-issue-id="${this.currentPreview.issueId}"][data-element-id="${this.currentPreview.elementId}"]`;
+    const stillExists = this.shadow.querySelector(selector);
+    if (!stillExists) {
+      this.dispatchPreviewIssue({
+        issueId: this.currentPreview.issueId,
+        elementId: this.currentPreview.elementId,
+        active: false,
+      });
+      this.currentPreview = null;
+    }
   }
 
   private render(): void {
@@ -156,6 +317,8 @@ export class ProoflyIssuesPanel extends HTMLElement {
         </section>
       </div>
     `;
+
+    this.reconcilePreviewState();
   }
 
   private renderIssueSummary(totalIssues: number): string {

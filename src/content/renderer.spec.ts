@@ -181,6 +181,49 @@ describe('UnderlineRenderer', () => {
     expect(node.tabIndex).toBe(0);
   });
 
+  it('toggles preview state on underline nodes', () => {
+    const renderer = new UnderlineRenderer(container as unknown as HTMLElement);
+    const issue = descriptor('issue-preview', new DOMRect(0, 0, 40, 6));
+
+    renderer.render([issue], {
+      paddingLeft: 0,
+      paddingRight: 0,
+      paddingTop: 0,
+      paddingBottom: 0,
+      scrollLeft: 0,
+      scrollTop: 0,
+      clientWidth: 200,
+      clientHeight: 200,
+      lineHeight: 16,
+      margin: 10,
+      activeIssueId: null,
+      previewIssueId: 'issue-preview',
+      palette,
+      underlineStyle: 'solid',
+    });
+
+    expect(container.children[0].dataset.preview).toBe('true');
+
+    renderer.render([issue], {
+      paddingLeft: 0,
+      paddingRight: 0,
+      paddingTop: 0,
+      paddingBottom: 0,
+      scrollLeft: 0,
+      scrollTop: 0,
+      clientWidth: 200,
+      clientHeight: 200,
+      lineHeight: 16,
+      margin: 10,
+      activeIssueId: null,
+      previewIssueId: null,
+      palette,
+      underlineStyle: 'solid',
+    });
+
+    expect(container.children[0].dataset.preview).toBeUndefined();
+  });
+
   it('clears all underline nodes when requested', () => {
     const renderer = new UnderlineRenderer(container as unknown as HTMLElement);
     renderer.render([descriptor('one', new DOMRect(0, 0, 10, 5))], {

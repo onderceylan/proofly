@@ -57,10 +57,12 @@ export class MirrorTargetHandler implements TargetHandler {
   clearHighlights(): void {
     this.session.setIssues([]);
     this.session.clearActiveIssue();
+    this.session.clearPreviewIssue();
   }
 
   clearSelection(): void {
     this.session.clearActiveIssue();
+    this.session.clearPreviewIssue();
   }
 
   updatePreferences(prefs: {
@@ -81,6 +83,10 @@ export class MirrorTargetHandler implements TargetHandler {
 
   dispose(): void {
     this.detach();
+  }
+
+  previewIssue(issueId: string | null): void {
+    this.session.setPreviewIssue(issueId);
   }
 
   private mapCorrectionsToIssues(

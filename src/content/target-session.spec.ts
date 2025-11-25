@@ -272,6 +272,26 @@ describe('TargetSession', () => {
     expect(rendererInstance.render).toHaveBeenCalled();
     const [, options] = rendererInstance.render.mock.calls[0];
     expect(options.activeIssueId).toBeNull();
+    expect(options.previewIssueId).toBeNull();
+  });
+
+  it('passes preview issue state to renderer', () => {
+    const session = createSession();
+    session.attach();
+    session.setIssues([
+      { id: 'preview-1', start: 0, end: 3, type: 'spelling', label: 'Preview suggestion' },
+    ]);
+
+    session.setPreviewIssue('preview-1');
+    (session as any).flushFrame();
+
+    const firstCall = rendererInstance.render.mock.calls.at(-1);
+    expect(firstCall?.[1].previewIssueId).toBe('preview-1');
+
+    session.setPreviewIssue(null);
+    (session as any).flushFrame();
+    const secondCall = rendererInstance.render.mock.calls.at(-1);
+    expect(secondCall?.[1].previewIssueId).toBeNull();
   });
 
   it('invokes underline click hooks with computed rect', () => {

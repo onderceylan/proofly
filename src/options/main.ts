@@ -55,6 +55,7 @@ interface LiveTestControls {
   clearHighlights(): void;
   applyIssue(issueId: string): void;
   applyAllIssues(): void;
+  previewIssue(issueId: string, active: boolean): void;
 }
 
 interface LiveTestAreaOptions {
@@ -731,6 +732,20 @@ async function initOptions() {
         return true;
       }
 
+      if (message.type === 'proofly:preview-issue') {
+        if (
+          message.payload?.issueId &&
+          typeof message.payload.active === 'boolean' &&
+          liveTestControls
+        ) {
+          liveTestControls.previewIssue(message.payload.issueId, message.payload.active);
+          sendResponse({ success: true });
+        } else {
+          sendResponse({ success: false });
+        }
+        return true;
+      }
+
       return false;
     });
   }
@@ -1026,6 +1041,21 @@ async function setupLiveTestArea(
     }
   };
 
+  const previewIssue = (issueId: string, active: boolean) => {
+    if (!active) {
+      highlighter.clearPreview();
+      return;
+    }
+
+    const correction = issueLookup.get(issueId);
+    if (!correction) {
+      highlighter.clearPreview();
+      return;
+    }
+
+    highlighter.previewCorrection(editor, correction);
+  };
+
   return {
     updateEnabledTypes,
     updateColors,
@@ -1033,6 +1063,7 @@ async function setupLiveTestArea(
     clearHighlights,
     applyIssue,
     applyAllIssues,
+    previewIssue,
   };
 }
 

@@ -20,6 +20,7 @@ const ERROR_TYPES = [
 ] as const;
 
 const SELECTED_HIGHLIGHT = 'prfly-selected';
+const PREVIEW_HIGHLIGHT = 'prfly-preview';
 
 export class ContentHighlighter {
   private highlightedElements = new Map<HTMLElement, ProofreadCorrection[]>();
@@ -42,6 +43,13 @@ export class ContentHighlighter {
   private selectedHighlight: Highlight | null = null;
   private selectedElement: HTMLElement | null = null;
   private selectedCorrectionRange: {
+    start: number;
+    end: number;
+    type?: string;
+  } | null = null;
+  private previewHighlight: Highlight | null = null;
+  private previewElement: HTMLElement | null = null;
+  private previewCorrectionRange: {
     start: number;
     end: number;
     type?: string;
@@ -77,6 +85,9 @@ export class ContentHighlighter {
     if (this.selectedCorrectionRange) {
       setSelectedHighlightColors(this.selectedCorrectionRange.type, this.correctionColors);
     }
+    if (this.previewCorrectionRange) {
+      setPreviewHighlightColors(this.previewCorrectionRange.type, this.correctionColors);
+    }
   }
 
   setPopover(popover: CorrectionPopover | null): void {
@@ -105,6 +116,14 @@ export class ContentHighlighter {
     };
   }
 
+  previewCorrection(element: HTMLElement, correction: ProofreadCorrection): void {
+    this.highlightPreviewCorrection(element, correction);
+  }
+
+  clearPreview(): void {
+    this.clearPreviewCorrection();
+  }
+
   private initializeHighlights(): void {
     if (!('highlights' in CSS)) {
       logger.warn('CSS Custom Highlights API not supported');
@@ -119,6 +138,9 @@ export class ContentHighlighter {
 
     this.selectedHighlight = new Highlight();
     CSS.highlights.set(SELECTED_HIGHLIGHT, this.selectedHighlight);
+
+    this.previewHighlight = new Highlight();
+    CSS.highlights.set(PREVIEW_HIGHLIGHT, this.previewHighlight);
   }
 
   private async initializeUnderlineStyle(): Promise<void> {
@@ -423,6 +445,34 @@ export class ContentHighlighter {
     setSelectedHighlightColors(correction.type, this.correctionColors);
   }
 
+  private highlightPreviewCorrection(element: HTMLElement, correction: ProofreadCorrection): void {
+    if (!('highlights' in CSS) || !this.previewHighlight) {
+      return;
+    }
+
+    const textNode = this.getFirstTextNode(element);
+    if (!textNode) {
+      this.clearPreviewCorrection();
+      return;
+    }
+
+    const range = createCorrectionRange(textNode, correction.startIndex, correction.endIndex);
+    if (!range) {
+      this.clearPreviewCorrection();
+      return;
+    }
+
+    this.previewHighlight.clear();
+    this.previewHighlight.add(range);
+    this.previewElement = element;
+    this.previewCorrectionRange = {
+      start: correction.startIndex,
+      end: correction.endIndex,
+      type: correction.type,
+    };
+    setPreviewHighlightColors(correction.type, this.correctionColors);
+  }
+
   private clearSelectedCorrection(): void {
     if (this.selectedHighlight) {
       this.selectedHighlight.clear();
@@ -431,6 +481,22 @@ export class ContentHighlighter {
     this.selectedElement = null;
     this.selectedCorrectionRange = null;
     clearSelectedHighlightColors();
+  }
+
+  private clearPreviewCorrection(): void {
+    if (this.previewHighlight) {
+      this.previewHighlight.clear();
+    }
+
+    this.previewElement = null;
+    this.previewCorrectionRange = null;
+    clearPreviewHighlightColors();
+  }
+
+  private clearPreviewForElement(element: HTMLElement): void {
+    if (this.previewElement === element) {
+      this.clearPreviewCorrection();
+    }
   }
 
   private reapplySelectedHighlight(element: HTMLElement, textNode: Text): void {
@@ -457,6 +523,32 @@ export class ContentHighlighter {
     this.selectedHighlight.clear();
     this.selectedHighlight.add(range);
     setSelectedHighlightColors(this.selectedCorrectionRange.type, this.correctionColors);
+  }
+
+  private reapplyPreviewHighlight(element: HTMLElement, textNode: Text): void {
+    if (
+      !('highlights' in CSS) ||
+      !this.previewHighlight ||
+      this.previewElement !== element ||
+      !this.previewCorrectionRange
+    ) {
+      return;
+    }
+
+    const range = createCorrectionRange(
+      textNode,
+      this.previewCorrectionRange.start,
+      this.previewCorrectionRange.end
+    );
+
+    if (!range) {
+      this.clearPreviewCorrection();
+      return;
+    }
+
+    this.previewHighlight.clear();
+    this.previewHighlight.add(range);
+    setPreviewHighlightColors(this.previewCorrectionRange.type, this.correctionColors);
   }
 
   private getCorrectionBoundingRect(
@@ -529,6 +621,7 @@ export class ContentHighlighter {
     }
 
     this.clearSelectedCorrection();
+    this.clearPreviewForElement(element);
     CSS.highlights.delete(SELECTED_HIGHLIGHT);
     this.selectedHighlight = new Highlight();
     CSS.highlights.set(SELECTED_HIGHLIGHT, this.selectedHighlight);
@@ -539,6 +632,7 @@ export class ContentHighlighter {
     this.elementRanges.delete(element);
     this.removeHighlights(element);
     this.clearSelectedCorrection();
+    this.clearPreviewForElement(element);
   }
 
   clearAllHighlights(): void {
@@ -546,6 +640,7 @@ export class ContentHighlighter {
       this.clearHighlights(element);
     }
     this.elementRanges.clear();
+    this.clearPreviewCorrection();
   }
 
   private isEditableElement(element: HTMLElement): boolean {
@@ -619,6 +714,7 @@ export class ContentHighlighter {
     this.elementRanges.set(element, ranges);
 
     this.reapplySelectedHighlight(element, textNode);
+    this.reapplyPreviewHighlight(element, textNode);
   }
 
   private getFirstTextNode(element: HTMLElement): Text | null {
@@ -688,6 +784,7 @@ export class ContentHighlighter {
         CSS.highlights.delete(errorType);
       }
       CSS.highlights.delete(SELECTED_HIGHLIGHT);
+      CSS.highlights.delete(PREVIEW_HIGHLIGHT);
     }
     this.highlights.clear();
 
@@ -704,6 +801,10 @@ export class ContentHighlighter {
     this.selectedHighlight = null;
     this.selectedElement = null;
     clearSelectedHighlightColors();
+    this.previewHighlight = null;
+    this.previewElement = null;
+    this.previewCorrectionRange = null;
+    clearPreviewHighlightColors();
   }
 
   clearSelection(): void {
@@ -751,6 +852,10 @@ function updateHighlightStyle(style: UnderlineStyle, colors: CorrectionColorThem
   [data-proofly-contenteditable]::highlight(${SELECTED_HIGHLIGHT}) {
     background-color: var(--prfly-selected-highlight-bg, transparent);
   }
+
+  [data-proofly-contenteditable]::highlight(${PREVIEW_HIGHLIGHT}) {
+    background-color: var(--prfly-preview-highlight-bg, transparent);
+  }
 `);
 }
 
@@ -781,6 +886,20 @@ function setSelectedHighlightColors(
 function clearSelectedHighlightColors(): void {
   document.documentElement.style.removeProperty('--prfly-selected-highlight-bg');
   document.documentElement.style.removeProperty('--prfly-selected-highlight-color');
+}
+
+function setPreviewHighlightColors(
+  type: string | undefined,
+  colors: CorrectionColorThemeMap
+): void {
+  const theme = type
+    ? colors[type as keyof CorrectionColorThemeMap] || colors.spelling
+    : colors.spelling;
+  document.documentElement.style.setProperty('--prfly-preview-highlight-bg', theme.background);
+}
+
+function clearPreviewHighlightColors(): void {
+  document.documentElement.style.removeProperty('--prfly-preview-highlight-bg');
 }
 
 function createCorrectionRange(textNode: Text, start: number, end: number): Range | null {

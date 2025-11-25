@@ -187,6 +187,39 @@ export class ProofreadingManager {
     logger.info('Applied all outstanding issues');
   }
 
+  previewIssue(elementId: string, issueId: string, active: boolean): void {
+    const element = this.elementTracker.getElementById(elementId);
+    if (!element) {
+      logger.warn({ elementId, issueId }, 'Issue preview requested for unknown element');
+      this.highlighter.clearPreview();
+      return;
+    }
+
+    const handler = this.targetHandlers.get(element);
+    if (handler instanceof MirrorTargetHandler) {
+      if (!active) {
+        handler.previewIssue(null);
+        return;
+      }
+      handler.previewIssue(issueId);
+      return;
+    }
+
+    if (!active) {
+      this.highlighter.clearPreview();
+      return;
+    }
+
+    const correction = this.issueManager.getCorrection(element, issueId);
+    if (!correction) {
+      logger.warn({ elementId, issueId }, 'Missing correction for requested issue preview');
+      this.highlighter.clearPreview();
+      return;
+    }
+
+    this.highlighter.previewCorrection(element, correction);
+  }
+
   private applyAllIssuesForElement(element: HTMLElement): boolean {
     let applied = false;
     let safetyCounter = 0;
