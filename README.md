@@ -14,8 +14,8 @@
 [Features](#features) •
 [Why Proofly](#why-proofly) •
 [Installation](#installation) •
-[Contributing](Agents.md) •
-[Privacy](PRIVACY.md)
+[Contributing](#development) •
+[Privacy](#privacy--security)
 
 </div>
 
@@ -76,7 +76,9 @@ Proofly runs 100% locally on your device:
 - **Keyboard Shortcuts**: Quick access with customizable hotkeys (Cmd/Ctrl+Shift+P)
 - **Auto-Correct Mode**: Real-time checking as you type
 - **Manual Mode**: Check on-demand whenever you want
-- **Issue Sidebar**: View all issues and suggested corrections in a dedicated panel
+- **Selection Correction**: Proofread your own highlighted text on-demand
+- **Issues Sidebar**: View issues, navigate through them and apply suggested corrections in a dedicated panel
+- **Undo/Redo Support**: Full history management for corrections
 
 ### Performance & Compatibility
 
@@ -84,7 +86,7 @@ Proofly runs 100% locally on your device:
 - **Fast**: Instant suggestions powered by local on-device AI
 - **Shadow DOM Isolation**: No interference with host pages
 - **Works Everywhere**: Input fields, textareas, contenteditable elements
-- **Undo/Redo Support**: Full history management for corrections
+- **Web Standards Compliant**: Ignores auto-correction on fields based on their semantics
 
 ### Customization
 
@@ -115,7 +117,7 @@ Proofly runs 100% locally on your device:
 3. **True Offline Mode**: Works on airplanes, remote locations, anywhere
 4. **Lightning Fast**: No network latency, instant corrections
 5. **Resource Efficient**: Minimal CPU and memory usage
-6. **Non-Invasive**: Minimal native code is injected only when needed
+6. **Non-Invasive**: Minimal native code is injected to the sites only when needed
 7. **No Account Required**: No sign-up, no email, no personal info
 8. **Future-Proof**: Uses Chrome's standard Built-in AI API and modern web tech
 
@@ -168,17 +170,14 @@ Proofly is built with modern web technologies and best practices:
 ### System Requirements
 
 - **Operating System**: Windows 10/11, macOS 13+, Linux, or ChromeOS (Chromebook Plus)
-- **Chrome Version**: Chrome 141+ (Canary or Dev channel)
+- **Chrome Version**: Chrome 141+
 - **Storage**: At least 22 GB free space (for AI model download)
 - **GPU**: Recommended 4+ GB VRAM for optimal performance
 - **Network**: Internet connection for initial model download (one-time)
 
 ### Browser Support
 
-Proofly requires Chrome 141 or later with the Built-in AI Proofreader API enabled. This feature is currently available in:
-
-- Chrome Canary
-- Chrome Dev
+Proofly requires Chrome 141 or later with the Built-in AI Proofreader API enabled.
 
 **Note**: The Proofreader API is in origin trial and will be available in stable Chrome soon.
 
@@ -218,9 +217,9 @@ npm install
 npm run dev
 
 # Build for production
+# The extension will be built to dist/
 npm run build
 
-# The extension will be built to dist/
 # Load dist/ as an unpacked extension in chrome://extensions/ for testing the prod build
 # Load dev/ as an unpacked extension in chrome://extensions/ for testing the HMR dev build
 ```
@@ -244,15 +243,26 @@ npm install
 # Start development server (auto-rebuilds on changes)
 npm run dev
 
-# Type checking
-npx tsc --noEmit
+# Build the project
+npm run build
 
-# Format checking
+# Type checking
+npm run typecheck
+
+# Linting
+npm run lint
+
+# Format checking and fixing
 npm run format:check
+npm run format
+
+# Unit tests
+npm run test
+npm run test:watch
 
 # Puppeteer tests
-npm test
-npm run test:watch
+npm run test:e2e
+npm run test:e2e:watch
 
 # Load extension in Chrome
 # 1. Open chrome://extensions/
@@ -260,14 +270,6 @@ npm run test:watch
 # 3. Click "Load unpacked"
 # 4. Select the dev/ folder
 ```
-
-### Key Files
-
-- **`manifest.config.ts`**: Chrome extension manifest configuration
-- **`src/services/proofreader.ts`**: Chrome Built-in AI integration
-- **`src/content/proofreading-manager.ts`**: Orchestrates proofreading logic
-- **`src/shared/proofreading/controller.ts`**: Core proofreading controller
-- **`src/content/components/`**: All UI components (Shadow DOM)
 
 ### Development Guidelines
 
@@ -290,14 +292,14 @@ We welcome contributions from the community! Whether you're fixing bugs, adding 
 1. **Pick an Issue**: Browse open issues or propose new features
 2. **Fork & Branch**: Create a feature branch from `main`
 3. **Make Changes**: Follow our coding standards and conventions
-4. **Test Thoroughly**: Verify your changes work as expected
+4. **Test Thoroughly**: Verify your changes work as expected though automated e2e tests
 5. **Submit PR**: Open a pull request with a clear description
 
 ### Development Principles
 
 - **Privacy First**: No data collection, no tracking, no telemetry
 - **Minimal Footprint**: Keep bundle sizes small
-- **Long-term Maintenance**: Avoid dependencies, and keep building on web standards
+- **Long-term Maintenance**: Avoid dependencies, and keep building on native web standards
 - **Non-Invasive**: Respect the user's page and experience, keep injections minimal and isolated
 - **Accessibility**: Support all users, including those with disabilities
 - **Performance**: Optimize for speed and efficiency
@@ -318,7 +320,7 @@ We welcome contributions from the community! Whether you're fixing bugs, adding 
 
 - **Minimal Permissions**: Only requests essential Chrome APIs
 - **Content Security Policy**: Strict CSP prevents code injection
-- **Shadow DOM Isolation**: UI components are completely isolated
+- **Shadow DOM Isolation**: UI components that are injected to the sites are completely isolated
 - **No External Resources**: All assets bundled with extension
 - **Regular Security Audits**: Community-driven code reviews
 
