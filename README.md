@@ -264,11 +264,14 @@ npm run test:watch
 npm run test:e2e
 npm run test:e2e:watch
 
-# Load extension in Chrome
-# 1. Open chrome://extensions/
-# 2. Enable "Developer mode"
-# 3. Click "Load unpacked"
-# 4. Select the dev/ folder
+# For setting up e2e test env, load extension in Chrome once for your test-focused puppeteer user profile
+# 1. Download https://www.google.com/chrome/dev/
+# 2. Run `npm run test:e2e:watch` to open the browser profile of puppeteer or launch the browser manually with `/Applications/Google\ Chrome\ Dev.app/Contents/MacOS/Google\ Chrome\ Dev \ --user-data-dir=$HOME/.cache/chrome-devtools-mcp/chrome-profile-canary --load-extension=./projects/proofly/dev --no-first-run --hide-crash-restore-bubble`
+# 3. Open chrome://extensions/
+# 4. Enable "Developer mode"
+# 5. Click "Load unpacked"
+# 6. Select the dev folder
+# 7. Download the AI model once
 ```
 
 ### Development Guidelines
