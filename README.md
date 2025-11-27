@@ -295,7 +295,7 @@ We welcome contributions from the community! Whether you're fixing bugs, adding 
 1. **Pick an Issue**: Browse open issues or propose new features
 2. **Fork & Branch**: Create a feature branch from `main`
 3. **Make Changes**: Follow our coding standards and conventions
-4. **Test Thoroughly**: Verify your changes work as expected though automated e2e tests
+4. **Test Thoroughly**: Verify your changes work as expected through automated e2e tests
 5. **Submit PR**: Open a pull request with a clear description
 
 ### Development Principles
