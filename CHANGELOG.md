@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.1](https://github.com/onderceylan/proofly/compare/v0.5.0...v0.5.1) (2025-11-29)
+
+
+### Documentation
+
+* add link to the promo video ([#24](https://github.com/onderceylan/proofly/issues/24)) ([7bac385](https://github.com/onderceylan/proofly/commit/7bac385116e5be80c515d0494326ea7117e91770))
+* update project details ([#22](https://github.com/onderceylan/proofly/issues/22)) ([fae99a4](https://github.com/onderceylan/proofly/commit/fae99a40cd74c01f5445b0bcb4041437a133ab67))
+
 ## [0.5.0](https://github.com/onderceylan/proofly/compare/v0.4.5...v0.5.0) (2025-11-25)
 
 
