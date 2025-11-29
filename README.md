@@ -11,7 +11,7 @@
 
 **Your privacy-first writing assistant powered by Chrome on-device AI**
 
-<a href="https://www.youtube.com/watch?v=XU2wM87VukY"><img src="static/youtube-promo.png" alt="Proofly Logo" width="640"></a>
+<a href="https://www.youtube.com/watch?v=XU2wM87VukY" target="_blank"><img src="static/youtube-promo.png" alt="Proofly Logo" width="640"></a>
 
 [Features](#features) •
 [Why Proofly](#why-proofly) •
