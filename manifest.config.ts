@@ -36,6 +36,7 @@ export default defineManifest({
     },
   ],
   permissions: ['sidePanel', 'tabs', 'storage', 'contextMenus'],
+  optional_host_permissions: ['https://*/*', 'http://*/*'],
   side_panel: {
     default_path: 'src/sidepanel/index.html',
   },

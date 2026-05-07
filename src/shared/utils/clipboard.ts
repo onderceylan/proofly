@@ -7,6 +7,10 @@
  */
 
 import { logger } from '../../services/logger.ts';
+import {
+  resolveContentEditableOffset,
+  extractContentEditableText,
+} from './contenteditable-text.ts';
 
 /**
  * Replaces a text range in an editable element, maintaining undo/redo history
@@ -96,7 +100,7 @@ export function replaceTextWithUndo(
       }
 
       logger.warn('Unable to resolve range for replacement');
-      const text = element.textContent || '';
+      const text = extractContentEditableText(element);
       element.textContent = text.substring(0, startIndex) + replacement + text.substring(endIndex);
       element.normalize();
       element.dispatchEvent(new Event('input', { bubbles: true }));
@@ -118,8 +122,8 @@ const createRangeForOffsets = (
   startIndex: number,
   endIndex: number
 ): Range | null => {
-  const start = resolveTextPosition(element, startIndex);
-  const end = resolveTextPosition(element, endIndex);
+  const start = resolveContentEditableOffset(element, startIndex);
+  const end = resolveContentEditableOffset(element, endIndex);
 
   if (!start || !end) {
     return null;
@@ -129,41 +133,4 @@ const createRangeForOffsets = (
   range.setStart(start.node, start.offset);
   range.setEnd(end.node, end.offset);
   return range;
-};
-
-interface TextPosition {
-  node: Text;
-  offset: number;
-}
-
-const resolveTextPosition = (element: HTMLElement, index: number): TextPosition | null => {
-  let remaining = index;
-  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-  let textNode = walker.nextNode() as Text | null;
-
-  while (textNode) {
-    const length = textNode.textContent?.length ?? 0;
-    if (remaining <= length) {
-      return { node: textNode, offset: remaining };
-    }
-    remaining -= length;
-    textNode = walker.nextNode() as Text | null;
-  }
-
-  const lastText = getLastTextNode(element);
-  if (!lastText) {
-    return null;
-  }
-
-  return { node: lastText, offset: lastText.textContent?.length ?? 0 };
-};
-
-const getLastTextNode = (element: HTMLElement): Text | null => {
-  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-  let last: Text | null = null;
-  let current: Text | null;
-  while ((current = walker.nextNode() as Text | null)) {
-    last = current;
-  }
-  return last;
 };

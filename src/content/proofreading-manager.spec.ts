@@ -10,6 +10,7 @@ vi.mock('../shared/proofreading/control-events.ts', () => ({
   emitProofreadControlEvent: vi.fn(),
 }));
 
+let lastElementTracker: Record<string, ReturnType<typeof vi.fn>>;
 vi.mock('./services/element-tracker.ts', () => ({
   ElementTracker: class {
     initialize = vi.fn();
@@ -23,6 +24,9 @@ vi.mock('./services/element-tracker.ts', () => ({
     isProofreadTarget = vi.fn(() => true);
     shouldAutoProofread = vi.fn(() => true);
     resolveAutoProofreadIgnoreReason = vi.fn(() => 'unsupported-target');
+    constructor() {
+      lastElementTracker = this as unknown as Record<string, ReturnType<typeof vi.fn>>;
+    }
   },
 }));
 
@@ -64,6 +68,7 @@ vi.mock('./services/issue-manager.ts', () => ({
   },
 }));
 
+let lastProofreadService: Record<string, ReturnType<typeof vi.fn>>;
 vi.mock('./services/content-proofreading-service.ts', () => ({
   ContentProofreadingService: class {
     initialize = vi.fn(async () => {});
@@ -76,16 +81,9 @@ vi.mock('./services/content-proofreading-service.ts', () => ({
     getCorrections = vi.fn(() => []);
     isRestoringFromHistory = vi.fn(() => false);
     cancelPendingProofreads = vi.fn();
-  },
-}));
-
-vi.mock('./components/content-highlighter.ts', () => ({
-  ContentHighlighter: class {
-    clearSelection = vi.fn();
-    destroy = vi.fn();
-    setCorrectionColors = vi.fn();
-    previewCorrection = vi.fn();
-    clearPreview = vi.fn();
+    constructor() {
+      lastProofreadService = this as unknown as Record<string, ReturnType<typeof vi.fn>>;
+    }
   },
 }));
 
@@ -99,11 +97,23 @@ vi.mock('./handlers/mirror-target-handler.ts', () => ({
   },
 }));
 
-vi.mock('./handlers/direct-target-handler.ts', () => ({
-  DirectTargetHandler: class {
+let lastCEHandlerOptions: {
+  onInvalidateIssues: () => void;
+  onNeedProofread?: () => void;
+  [key: string]: unknown;
+} | null = null;
+vi.mock('./handlers/contenteditable-target-handler.ts', () => ({
+  ContentEditableTargetHandler: class {
     attach = vi.fn();
     dispose = vi.fn();
+    clearHighlights = vi.fn();
     clearSelection = vi.fn();
+    highlight = vi.fn();
+    previewIssue = vi.fn();
+    updatePreferences = vi.fn();
+    constructor(_element: unknown, options: typeof lastCEHandlerOptions) {
+      lastCEHandlerOptions = options;
+    }
   },
 }));
 
@@ -126,11 +136,19 @@ function createElement(tagName: string, text = ''): HTMLElement {
   } as unknown as HTMLElement;
 }
 
+type PrivateManager = {
+  handleElementFocused: (element: HTMLElement) => void;
+  handleElementInput: (element: HTMLElement) => void;
+  handleProofreadLifecycle: (event: ProofreadLifecycleInternalEvent) => void;
+  reportIgnoredElement: (el: HTMLElement, reason: ProofreadLifecycleReason) => void;
+};
+
 describe('ProofreadingManager', () => {
   let manager: ProofreadingManager;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    lastCEHandlerOptions = null;
     vi.stubGlobal('document', {
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
@@ -168,11 +186,7 @@ describe('ProofreadingManager', () => {
     it('should enrich lifecycle events with element metadata', () => {
       const element = createElement('input');
 
-      (
-        manager as unknown as {
-          handleProofreadLifecycle: (event: ProofreadLifecycleInternalEvent) => void;
-        }
-      ).handleProofreadLifecycle({
+      (manager as unknown as PrivateManager).handleProofreadLifecycle({
         status: 'complete',
         element,
         executionId: 'exec-123',
@@ -195,11 +209,7 @@ describe('ProofreadingManager', () => {
     it('should report ignored events with reason', () => {
       const element = createElement('div', 'draft text');
 
-      (
-        manager as unknown as {
-          reportIgnoredElement: (el: HTMLElement, reason: ProofreadLifecycleReason) => void;
-        }
-      ).reportIgnoredElement(element, 'unsupported-target');
+      (manager as unknown as PrivateManager).reportIgnoredElement(element, 'unsupported-target');
 
       expect(emitProofreadControlEvent).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -249,6 +259,90 @@ describe('ProofreadingManager', () => {
       manager.destroy();
 
       expect(manager).toBeDefined();
+    });
+  });
+
+  describe('contenteditable re-proofreading on input', () => {
+    it('should call scheduleProofread via handleElementInput when shouldAutoProofread passes', () => {
+      const element = createElement('div', 'text with erors');
+
+      (manager as unknown as PrivateManager).handleElementInput(element);
+
+      expect(lastProofreadService.scheduleProofread).toHaveBeenCalledWith(element);
+    });
+
+    it('should create ContentEditableTargetHandler with onNeedProofread on focus', () => {
+      const element = createElement('div', 'text with erors');
+
+      (manager as unknown as PrivateManager).handleElementFocused(element);
+
+      expect(lastCEHandlerOptions).not.toBeNull();
+      expect(lastCEHandlerOptions!.onNeedProofread).toBeDefined();
+      expect(typeof lastCEHandlerOptions!.onNeedProofread).toBe('function');
+    });
+
+    it('should trigger proofread when onNeedProofread is called', () => {
+      const element = createElement('div', 'text with erors');
+
+      (manager as unknown as PrivateManager).handleElementFocused(element);
+      lastProofreadService.proofread.mockClear();
+
+      lastCEHandlerOptions!.onNeedProofread!();
+
+      expect(lastProofreadService.proofread).toHaveBeenCalledWith(element);
+    });
+
+    it('should re-proofread via handleElementInput when element is already registered even if shouldAutoProofread flips', () => {
+      const element = createElement('div', 'text with erors');
+      let callCount = 0;
+      lastElementTracker.shouldAutoProofread.mockImplementation(() => {
+        callCount++;
+        return callCount <= 1;
+      });
+      lastElementTracker.isRegistered.mockReturnValue(false);
+
+      (manager as unknown as PrivateManager).handleElementFocused(element);
+
+      expect(lastProofreadService.proofread).toHaveBeenCalledWith(element);
+      lastProofreadService.proofread.mockClear();
+      lastProofreadService.scheduleProofread.mockClear();
+
+      lastElementTracker.isRegistered.mockReturnValue(true);
+
+      (manager as unknown as PrivateManager).handleElementInput(element);
+
+      expect(lastProofreadService.scheduleProofread).toHaveBeenCalledWith(element);
+    });
+
+    it('should re-proofread via onNeedProofread when element is already registered even if shouldAutoProofread flips', () => {
+      const element = createElement('div', 'text with erors');
+      let callCount = 0;
+      lastElementTracker.shouldAutoProofread.mockImplementation(() => {
+        callCount++;
+        return callCount <= 1;
+      });
+      lastElementTracker.isRegistered.mockReturnValue(false);
+
+      (manager as unknown as PrivateManager).handleElementFocused(element);
+
+      expect(lastProofreadService.proofread).toHaveBeenCalledWith(element);
+      lastProofreadService.proofread.mockClear();
+
+      lastElementTracker.isRegistered.mockReturnValue(true);
+
+      lastCEHandlerOptions!.onNeedProofread!();
+
+      expect(lastProofreadService.proofread).toHaveBeenCalledWith(element);
+    });
+
+    it('should still block re-proofread for unregistered elements when shouldAutoProofread fails', () => {
+      const element = createElement('div', 'text with erors');
+      lastElementTracker.shouldAutoProofread.mockReturnValue(false);
+      lastElementTracker.isRegistered.mockReturnValue(false);
+
+      (manager as unknown as PrivateManager).handleElementInput(element);
+
+      expect(lastProofreadService.scheduleProofread).not.toHaveBeenCalled();
     });
   });
 });

@@ -7,7 +7,7 @@
  */
 
 import { STORAGE_KEYS, STORAGE_DEFAULTS } from '../constants.ts';
-import type { UnderlineStyle } from '../types.ts';
+import type { UnderlineStyle, ModelSource, ApiConfig } from '../types.ts';
 import type { CorrectionColorConfig, CorrectionTypeKey } from './correction-types.ts';
 
 export interface StorageData {
@@ -20,6 +20,8 @@ export interface StorageData {
   [STORAGE_KEYS.CORRECTION_COLORS]: CorrectionColorConfig;
   [STORAGE_KEYS.PROOFREAD_SHORTCUT]: string;
   [STORAGE_KEYS.AUTOFIX_ON_DOUBLE_CLICK]: boolean;
+  [STORAGE_KEYS.MODEL_SOURCE]: ModelSource;
+  [STORAGE_KEYS.API_CONFIG]: ApiConfig;
 }
 
 /**
@@ -32,6 +34,8 @@ const SYNC_KEYS = [
   STORAGE_KEYS.CORRECTION_COLORS,
   STORAGE_KEYS.PROOFREAD_SHORTCUT,
   STORAGE_KEYS.AUTOFIX_ON_DOUBLE_CLICK,
+  STORAGE_KEYS.MODEL_SOURCE,
+  // NOTE: API_CONFIG is intentionally in local storage (contains API key)
 ] as const;
 
 /**
@@ -131,14 +135,14 @@ export async function setStorageValues(data: Partial<StorageData>): Promise<void
   ]);
 }
 
-/**
- * Check if the proofreader model is ready
- */
 export async function isModelReady(): Promise<boolean> {
-  const { proofreaderReady, modelDownloaded } = await getStorageValues([
+  const { modelSource, proofreaderReady, modelDownloaded } = await getStorageValues([
+    STORAGE_KEYS.MODEL_SOURCE,
     STORAGE_KEYS.PROOFREADER_READY,
     STORAGE_KEYS.MODEL_DOWNLOADED,
   ]);
+
+  if (modelSource === 'api') return true;
 
   return proofreaderReady && modelDownloaded;
 }

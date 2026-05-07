@@ -5,6 +5,8 @@ import { createUniqueId } from '../../content/utils.ts';
 import type { ProofreadCorrection, ProofreadResult } from '../types.ts';
 import type { ProofreadingTarget, ProofreadingTargetHooks } from './types.ts';
 import type { ProofreadLifecycleReason, ProofreadLifecycleStatus } from './control-events.ts';
+import { extractContentEditableText } from '../utils/contenteditable-text.ts';
+import { computeIncrementalSelection, shiftCorrections } from '../utils/text-diff.ts';
 
 export interface ProofreadLifecycleInternalEvent {
   status: ProofreadLifecycleStatus;
@@ -69,7 +71,7 @@ const defaultGetElementText = (element: HTMLElement): string => {
   if (tagName === 'textarea' || tagName === 'input') {
     return (element as HTMLTextAreaElement | HTMLInputElement).value;
   }
-  return element.textContent || '';
+  return extractContentEditableText(element);
 };
 
 const isSameCorrection = (a: ProofreadCorrection, b: ProofreadCorrection): boolean =>
@@ -190,11 +192,27 @@ export class ProofreadingController {
     }
 
     const text = this.getElementText(element);
-    const selectionRange = this.clampSelectionRange(options.selection, text.length);
-    const hasSelection = selectionRange !== null;
-    const textLength = hasSelection ? selectionRange.end - selectionRange.start : text.length;
+    let selectionRange = this.clampSelectionRange(options.selection, text.length);
+    let hasSelection = selectionRange !== null;
     const executionId = newExecutionId();
     const forced = Boolean(options.force);
+
+    if (!forced && !hasSelection && state.lastText.length > 0 && state.corrections.length > 0) {
+      const incremental = computeIncrementalSelection(state.lastText, text);
+      if (incremental) {
+        state.corrections = shiftCorrections(
+          state.corrections,
+          incremental.oldDiffEnd,
+          incremental.delta
+        );
+        state.hooks.highlight(state.corrections);
+        state.hooks.onCorrectionsChange?.(state.corrections);
+        selectionRange = incremental.selection;
+        hasSelection = true;
+      }
+    }
+
+    const textLength = hasSelection ? selectionRange!.end - selectionRange!.start : text.length;
 
     this.reportLifecycle?.({
       status: 'queued',

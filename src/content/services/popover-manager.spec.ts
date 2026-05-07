@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { PopoverManager } from './popover-manager.ts';
-import type { ContentHighlighter } from '../components/content-highlighter.ts';
 import type { ProofreadCorrection } from '../../shared/types.ts';
 
 const mockPopover = {
@@ -31,13 +30,6 @@ vi.mock('../components/correction-popover.ts', () => ({
   },
 }));
 
-function createMockHighlighter(): ContentHighlighter {
-  return {
-    setPopover: vi.fn(),
-    clearSelection: vi.fn(),
-  } as unknown as ContentHighlighter;
-}
-
 function createMockElement(): HTMLElement {
   return {} as HTMLElement;
 }
@@ -52,18 +44,15 @@ function createMockCorrection(): ProofreadCorrection {
 
 describe('PopoverManager', () => {
   let manager: PopoverManager;
-  let highlighter: ContentHighlighter;
   let onCorrectionApplied: (element: HTMLElement, correction: ProofreadCorrection) => void;
   let onPopoverHide: () => void;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    highlighter = createMockHighlighter();
     onCorrectionApplied = vi.fn() as any;
     onPopoverHide = vi.fn() as any;
 
     manager = new PopoverManager({
-      highlighter,
       onCorrectionApplied,
       onPopoverHide,
     });
@@ -183,7 +172,6 @@ describe('PopoverManager', () => {
 
       expect(popover.remove).toHaveBeenCalled();
       expect((manager as any).popover).toBeNull();
-      expect(highlighter.setPopover).toHaveBeenCalledWith(null);
     });
 
     it('should not throw if popover does not exist', () => {

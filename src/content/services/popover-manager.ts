@@ -1,9 +1,7 @@
 import type { CorrectionPopover } from '../components/correction-popover.ts';
-import type { ContentHighlighter } from '../components/content-highlighter.ts';
 import type { ProofreadCorrection } from '../../shared/types.ts';
 
 export interface PopoverManagerOptions {
-  highlighter: ContentHighlighter;
   onCorrectionApplied: (element: HTMLElement, correction: ProofreadCorrection) => void;
   onPopoverHide: () => void;
 }
@@ -71,8 +69,6 @@ export class PopoverManager {
     }
 
     this.popover = popover;
-    this.options.highlighter.setPopover(this.popover);
-
     this.cleanupHandler(this.popoverHideCleanup);
     if (!this.popover) {
       return;
@@ -92,7 +88,6 @@ export class PopoverManager {
       return;
     }
 
-    this.options.highlighter.setPopover(null);
     this.cleanupHandler(this.popoverHideCleanup);
     this.popoverHideCleanup = null;
     this.popover.remove();

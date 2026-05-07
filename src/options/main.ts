@@ -6,17 +6,20 @@ import { debounce } from '../shared/utils/debounce.ts';
 import {
   isModelReady,
   getStorageValues,
+  getStorageValue,
   onStorageChange,
   setStorageValue,
 } from '../shared/utils/storage.ts';
 import { STORAGE_KEYS, STORAGE_DEFAULTS } from '../shared/constants.ts';
-import { ContentHighlighter } from '../content/components/content-highlighter.ts';
+import '../content/components/correction-popover.ts';
 import type { CorrectionPopover } from '../content/components/correction-popover.ts';
+import { ContentEditableTargetHandler } from '../content/handlers/contenteditable-target-handler.ts';
 import { createUniqueId } from '../content/utils.ts';
 import {
   createProofreader,
   createProofreaderAdapter,
   createProofreadingService,
+  type IProofreader,
 } from '../services/proofreader.ts';
 import {
   createProofreadingController,
@@ -37,6 +40,7 @@ import type {
   CorrectionTypeKey,
 } from '../shared/utils/correction-types.ts';
 import { isMacOS } from '../shared/utils/platform.ts';
+import { extractContentEditableText } from '../shared/utils/contenteditable-text.ts';
 import './style.css';
 import { logger } from '../services/logger.ts';
 import { ensureProofreaderModelReady } from '../services/model-checker.ts';
@@ -45,6 +49,7 @@ import {
   type IssuesUpdateMessage,
   type IssuesUpdatePayload,
 } from '../shared/messages/issues.ts';
+import { setupApiConfigSection } from './api-config-section.ts';
 
 const LIVE_TEST_SAMPLE_TEXT = `i love how Proofly help proofread any of my writting at web in a fully privet way, the user-experience is topnotch and immensly helpful.`;
 
@@ -62,10 +67,43 @@ interface LiveTestAreaOptions {
   isAutoCorrectEnabled: () => boolean;
 }
 
+function createBackgroundProofreaderAdapter(): IProofreader {
+  return {
+    async proofread(text: string) {
+      const requestId = `options-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      return new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage(
+          {
+            type: 'proofly:proofread-request',
+            payload: { requestId, text, language: 'en', fallbackLanguage: 'en' },
+          },
+          (response) => {
+            if (chrome.runtime.lastError) {
+              reject(new Error(chrome.runtime.lastError.message));
+              return;
+            }
+            if (response?.ok) {
+              resolve(response.result);
+            } else {
+              reject(new Error(response?.error?.message ?? 'Proofread request failed'));
+            }
+          }
+        );
+      });
+    },
+    destroy() {},
+  };
+}
+
 async function initOptions() {
   const app = document.querySelector<HTMLDivElement>('#app')!;
 
-  await ensureProofreaderModelReady();
+  const modelSource = await getStorageValue(STORAGE_KEYS.MODEL_SOURCE);
+  const isApiMode = modelSource === 'api';
+
+  if (!isApiMode) {
+    await ensureProofreaderModelReady();
+  }
 
   const modelReady = await isModelReady();
 
@@ -82,10 +120,43 @@ async function initOptions() {
           </div>
         </header>
         <main>
+          <section class="settings-section full-width">
+            <h2>AI Source</h2>
+            <p class="section-description">Choose how Proofly accesses the AI model for proofreading.</p>
+            <div class="section-items">
+              <div class="source-selector">
+                <label class="source-option">
+                  <input type="radio" name="modelSource" value="local" checked />
+                  <div class="source-option-content">
+                    <strong>Local Model</strong>
+                    <p>Uses Chrome's built-in AI. Private and fully offline.</p>
+                  </div>
+                </label>
+                <label class="source-option">
+                  <input type="radio" name="modelSource" value="api" />
+                  <div class="source-option-content">
+                    <strong>API</strong>
+                    <p>Uses an external AI API (e.g. Claude, Gemini).</p>
+                  </div>
+                </label>
+              </div>
+            </div>
+          </section>
           <proofly-model-downloader></proofly-model-downloader>
         </main>
       </div>
     `;
+
+    const welcomeSourceRadios = Array.from(
+      app.querySelectorAll<HTMLInputElement>('input[name="modelSource"]')
+    );
+    welcomeSourceRadios.forEach((radio) => {
+      radio.addEventListener('change', async () => {
+        if (!radio.checked || radio.value !== 'api') return;
+        await setStorageValue(STORAGE_KEYS.MODEL_SOURCE, 'api');
+        location.reload();
+      });
+    });
 
     const downloader = app.querySelector('proofly-model-downloader');
     downloader?.addEventListener('download-complete', () => {
@@ -266,8 +337,69 @@ async function initOptions() {
         </header>
         <main>
           <section class="settings-section full-width">
+            <h2>AI Source</h2>
+            <p class="section-description">Choose how Proofly accesses the AI model for proofreading.</p>
+            <div class="section-items">
+              <div class="source-selector">
+                <label class="source-option">
+                  <input type="radio" name="modelSource" value="local" ${modelSource === 'local' ? 'checked' : ''} />
+                  <div class="source-option-content">
+                    <strong>Local Model</strong>
+                    <p>Uses Chrome's built-in AI. Private and fully offline.</p>
+                  </div>
+                </label>
+                <label class="source-option">
+                  <input type="radio" name="modelSource" value="api" ${modelSource === 'api' ? 'checked' : ''} />
+                  <div class="source-option-content">
+                    <strong>API</strong>
+                    <p>Uses an external AI API (e.g. Claude, Gemini).</p>
+                  </div>
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section class="settings-section full-width" id="apiConfigSection" ${modelSource !== 'api' ? 'hidden' : ''}>
+            <h2>API Configuration</h2>
+            <p class="section-description">Connect Proofly to an external AI API.</p>
+            <div class="section-items">
+              <div class="api-form">
+                <div class="form-field">
+                  <label for="apiType">Type</label>
+                  <select id="apiType">
+                    <option value="claude">Claude (Anthropic)</option>
+                    <option value="gemini">Gemini (Google)</option>
+                    <option value="openai-compatible">OpenAI Compatible</option>
+                  </select>
+                </div>
+                <div class="form-field">
+                  <label for="apiUrl">API URL</label>
+                  <input type="url" id="apiUrl" placeholder="https://api.anthropic.com" />
+                  <span id="apiUrlHint" class="field-hint">Base URL for the API</span>
+                </div>
+                <div class="form-field">
+                  <label for="apiKey">API Key <span class="field-optional">(optional)</span></label>
+                  <div class="api-key-wrapper">
+                    <input type="password" id="apiKey" placeholder="sk-ant-..." autocomplete="off" />
+                    <button type="button" id="toggleApiKey" class="btn-icon">Show</button>
+                  </div>
+                </div>
+                <div class="api-actions">
+                  <button type="button" id="testConnectionBtn" class="btn-primary">Test connection</button>
+                  <button type="button" id="fetchModelsBtn" class="btn-secondary">Fetch models</button>
+                  <span id="connectionStatus" class="connection-status"></span>
+                </div>
+                <div class="form-field" id="modelSelectField" hidden>
+                  <label for="selectedModel">Model</label>
+                  <select id="selectedModel"></select>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="settings-section full-width" id="localModelStatus" ${modelSource === 'api' ? 'hidden' : ''}>
             <h2>Model Status</h2>
-            <p class="section-description">Review the status of AI models.</p>
+            <p class="section-description">Review the status of the local AI model.</p>
             <div class="section-items">
               <div class="status-card">
                 <div class="status-indicator ready"></div>
@@ -701,13 +833,33 @@ async function initOptions() {
       updateShortcutDisplay();
     });
 
+    // ── AI Source + API Configuration (delegated) ──────────────────────────
+    const apiConfig = await getStorageValue(STORAGE_KEYS.API_CONFIG);
+    setupApiConfigSection({
+      initialModelSource: modelSource,
+      initialApiConfig: apiConfig,
+      onModelSourceChange: () => {},
+    });
+
     // Setup live test area proofreading
+    const liveTestProofreader: IProofreader | null = isApiMode
+      ? createBackgroundProofreaderAdapter()
+      : await (async () => {
+          try {
+            const proofreader = await createProofreader();
+            return createProofreaderAdapter(proofreader);
+          } catch {
+            return null;
+          }
+        })();
+
     liveTestControls = await setupLiveTestArea(
       currentEnabledCorrectionTypes,
       correctionColorConfig,
       {
         isAutoCorrectEnabled: () => autoCorrectEnabled,
-      }
+      },
+      liveTestProofreader
     );
 
     // Handle apply issue and apply all messages from sidepanel
@@ -754,7 +906,8 @@ async function initOptions() {
 async function setupLiveTestArea(
   initialEnabledTypes: CorrectionTypeKey[],
   initialColorConfig: CorrectionColorConfig,
-  options: LiveTestAreaOptions
+  options: LiveTestAreaOptions,
+  proofreaderAdapter: IProofreader | null = null
 ): Promise<LiveTestControls | null> {
   const editor = document.getElementById('liveTestEditor');
   if (!editor) return null;
@@ -765,26 +918,72 @@ async function setupLiveTestArea(
   let activeProofreadingCount = 0;
   const issueLookup = new Map<string, ProofreadCorrection>();
 
-  const highlighter = new ContentHighlighter();
   const popover = document.createElement('proofly-correction-popover') as CorrectionPopover;
   document.body.appendChild(popover);
-  highlighter.setPopover(popover);
+
   let enabledTypes = new Set<CorrectionTypeKey>(initialEnabledTypes);
   let colorConfig = structuredClone(initialColorConfig);
   let colorThemes = buildCorrectionColorThemes(colorConfig);
-
   setActiveCorrectionColors(colorConfig);
-  highlighter.setCorrectionColors(colorThemes);
+
+  const handler = new ContentEditableTargetHandler(editor as HTMLElement, {
+    onUnderlineClick: (issueId, pageRect, anchorNode) => {
+      const correction = issueLookup.get(issueId);
+      if (!correction) {
+        return;
+      }
+      const text = extractContentEditableText(editor as HTMLElement);
+      const issueText = text.slice(
+        Math.max(0, correction.startIndex),
+        Math.min(text.length, correction.endIndex)
+      );
+      popover.setCorrection(correction, issueText, (applied) => {
+        controller.applyCorrection(editor as HTMLElement, applied);
+      });
+      const x = pageRect.left + pageRect.width / 2;
+      const y = pageRect.top + pageRect.height;
+      const positionResolver = anchorNode
+        ? () => {
+            if (!anchorNode.isConnected) {
+              return null;
+            }
+            const rect = anchorNode.getBoundingClientRect();
+            return { x: rect.left + rect.width / 2, y: rect.top + rect.height };
+          }
+        : undefined;
+      popover.show(x, y, { anchorElement: editor as HTMLElement, positionResolver });
+    },
+    onUnderlineDoubleClick: (issueId) => {
+      const correction = issueLookup.get(issueId);
+      if (!correction) {
+        return;
+      }
+      controller.applyCorrection(editor as HTMLElement, correction);
+    },
+    onInvalidateIssues: () => {
+      if (options.isAutoCorrectEnabled()) {
+        controller.scheduleProofread(editor as HTMLElement);
+      }
+    },
+    initialPalette: colorThemes,
+    initialUnderlineStyle: 'solid',
+    initialAutofixOnDoubleClick: false,
+  });
+  handler.attach();
 
   let proofreaderService: ReturnType<typeof createProofreadingService> | null = null;
 
-  try {
-    const proofreader = await createProofreader();
-    const adapter = createProofreaderAdapter(proofreader);
-    proofreaderService = createProofreadingService(adapter);
-  } catch (error) {
-    logger.error({ error }, 'Failed to initialize proofreader for live test area');
-    return null;
+  if (proofreaderAdapter) {
+    proofreaderService = createProofreadingService(proofreaderAdapter);
+  } else {
+    try {
+      const proofreader = await createProofreader();
+      const adapter = createProofreaderAdapter(proofreader);
+      proofreaderService = createProofreadingService(adapter);
+    } catch (error) {
+      logger.error({ error }, 'Failed to initialize proofreader for live test area');
+      return null;
+    }
   }
 
   const reportProofreaderBusy = (busy: boolean) => {
@@ -807,21 +1006,20 @@ async function setupLiveTestArea(
   };
 
   const emitIssuesUpdate = (corrections: ProofreadCorrection[]) => {
-    const text = editor.textContent || '';
+    const text = extractContentEditableText(editor as HTMLElement);
 
-    // Update issue lookup map
     issueLookup.clear();
     corrections
       .filter((correction) => correction.endIndex > correction.startIndex)
       .forEach((correction, index) => {
-        const issueId = `${correction.startIndex}:${correction.endIndex}:${correction.type ?? 'unknown'}:${index}`;
+        const issueId = `${correction.startIndex}:${correction.endIndex}:${index}`;
         issueLookup.set(issueId, correction);
       });
 
     const issues = corrections
       .filter((correction) => correction.endIndex > correction.startIndex)
       .map((correction, index) => {
-        const issueId = `${correction.startIndex}:${correction.endIndex}:${correction.type ?? 'unknown'}:${index}`;
+        const issueId = `${correction.startIndex}:${correction.endIndex}:${index}`;
         const originalText = text.slice(
           Math.max(0, Math.min(correction.startIndex, text.length)),
           Math.max(0, Math.min(correction.endIndex, text.length))
@@ -898,7 +1096,7 @@ async function setupLiveTestArea(
         });
     },
     debounceMs: 1000,
-    getElementText: (element) => element.textContent || '',
+    getElementText: (element) => extractContentEditableText(element),
     onLifecycleEvent: (event) => {
       if (event.status === 'start') {
         reportProofreaderBusy(true);
@@ -912,25 +1110,16 @@ async function setupLiveTestArea(
     element: editor,
     hooks: {
       highlight: (corrections) => {
-        highlighter.highlight(editor, corrections);
+        handler.highlight(corrections);
+        emitIssuesUpdate(corrections);
       },
       clearHighlights: () => {
-        highlighter.clearHighlights(editor);
+        handler.clearHighlights();
       },
       onCorrectionsChange: (corrections) => {
         emitIssuesUpdate(corrections);
       },
     },
-  });
-
-  highlighter.setApplyCorrectionCallback(editor, (_target, correction) => {
-    controller.applyCorrection(editor, correction);
-  });
-
-  editor.addEventListener('input', () => {
-    if (options.isAutoCorrectEnabled()) {
-      controller.scheduleProofread(editor);
-    }
   });
 
   editor.addEventListener('focus', () => {
@@ -955,16 +1144,7 @@ async function setupLiveTestArea(
 
   const updateEnabledTypes = (types: CorrectionTypeKey[]) => {
     enabledTypes = new Set(types);
-
-    if ('highlights' in CSS) {
-      for (const type of ALL_CORRECTION_TYPES) {
-        if (!enabledTypes.has(type)) {
-          const highlight = (CSS.highlights as any).get(type);
-          highlight?.clear?.();
-        }
-      }
-    }
-
+    handler.clearHighlights();
     void refreshProofreading();
   };
 
@@ -972,7 +1152,7 @@ async function setupLiveTestArea(
     colorConfig = structuredClone(config);
     colorThemes = buildCorrectionColorThemes(colorConfig);
     setActiveCorrectionColors(colorConfig);
-    highlighter.setCorrectionColors(colorThemes);
+    handler.updatePreferences({ colorPalette: colorThemes });
   };
 
   onStorageChange(STORAGE_KEYS.ENABLED_CORRECTION_TYPES, (newValue) => {
@@ -987,13 +1167,7 @@ async function setupLiveTestArea(
 
   const clearHighlights = () => {
     controller.resetElement(editor);
-
-    if ('highlights' in CSS) {
-      for (const type of ALL_CORRECTION_TYPES) {
-        const highlight = (CSS.highlights as any).get(type);
-        highlight?.clear?.();
-      }
-    }
+    handler.clearHighlights();
   };
 
   const applyIssue = (issueId: string) => {
@@ -1042,18 +1216,7 @@ async function setupLiveTestArea(
   };
 
   const previewIssue = (issueId: string, active: boolean) => {
-    if (!active) {
-      highlighter.clearPreview();
-      return;
-    }
-
-    const correction = issueLookup.get(issueId);
-    if (!correction) {
-      highlighter.clearPreview();
-      return;
-    }
-
-    highlighter.previewCorrection(editor, correction);
+    handler.previewIssue(active ? issueId : null);
   };
 
   return {

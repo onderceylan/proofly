@@ -1,4 +1,3 @@
-import { ContentHighlighter } from './components/content-highlighter.ts';
 import './components/correction-popover.ts';
 import { logger } from '../services/logger.ts';
 import { getSelectionRangeFromElement } from '../shared/proofreading/controller.ts';
@@ -12,16 +11,16 @@ import {
 } from '../shared/proofreading/control-events.ts';
 import type { TargetHandler } from './handlers/target-handler.ts';
 import { MirrorTargetHandler } from './handlers/mirror-target-handler.ts';
-import { DirectTargetHandler } from './handlers/direct-target-handler.ts';
+import { ContentEditableTargetHandler } from './handlers/contenteditable-target-handler.ts';
 import { ElementTracker } from './services/element-tracker.ts';
 import { PopoverManager } from './services/popover-manager.ts';
 import { PreferenceManager } from './services/preference-manager.ts';
 import { IssueManager } from './services/issue-manager.ts';
 import { ContentProofreadingService } from './services/content-proofreading-service.ts';
 import { resolveElementKind } from '../shared/messages/issues.ts';
+import { extractContentEditableText } from '../shared/utils/contenteditable-text.ts';
 
 export class ProofreadingManager {
-  private readonly highlighter = new ContentHighlighter();
   private readonly targetHandlers = new Map<HTMLElement, TargetHandler>();
   private readonly pageId = createUniqueId('page');
   private activeSessionElement: HTMLElement | null = null;
@@ -45,7 +44,6 @@ export class ProofreadingManager {
     });
 
     this.popoverManager = new PopoverManager({
-      highlighter: this.highlighter,
       onCorrectionApplied: (element, correction) =>
         this.handleCorrectionFromPopover(element, correction),
       onPopoverHide: () => this.handlePopoverHide(),
@@ -53,8 +51,7 @@ export class ProofreadingManager {
 
     this.preferenceManager = new PreferenceManager({
       onCorrectionTypesChanged: () => this.refreshCorrectionsForTrackedElements(),
-      onCorrectionColorsChanged: (colors, palette) => {
-        this.highlighter.setCorrectionColors(colors);
+      onCorrectionColorsChanged: (_colors, palette) => {
         this.targetHandlers.forEach((handler) =>
           handler.updatePreferences({ colorPalette: palette })
         );
@@ -114,7 +111,6 @@ export class ProofreadingManager {
     this.preferenceManager.destroy();
     this.elementTracker.destroy();
     this.popoverManager.destroy();
-    this.highlighter.destroy();
 
     this.targetHandlers.forEach((handler) => handler.dispose());
     this.targetHandlers.clear();
@@ -191,33 +187,20 @@ export class ProofreadingManager {
     const element = this.elementTracker.getElementById(elementId);
     if (!element) {
       logger.warn({ elementId, issueId }, 'Issue preview requested for unknown element');
-      this.highlighter.clearPreview();
       return;
     }
 
     const handler = this.targetHandlers.get(element);
+
     if (handler instanceof MirrorTargetHandler) {
-      if (!active) {
-        handler.previewIssue(null);
-        return;
-      }
-      handler.previewIssue(issueId);
+      handler.previewIssue(active ? issueId : null);
       return;
     }
 
-    if (!active) {
-      this.highlighter.clearPreview();
+    if (handler instanceof ContentEditableTargetHandler) {
+      handler.previewIssue(active ? issueId : null);
       return;
     }
-
-    const correction = this.issueManager.getCorrection(element, issueId);
-    if (!correction) {
-      logger.warn({ elementId, issueId }, 'Missing correction for requested issue preview');
-      this.highlighter.clearPreview();
-      return;
-    }
-
-    this.highlighter.previewCorrection(element, correction);
   }
 
   private applyAllIssuesForElement(element: HTMLElement): boolean {
@@ -313,10 +296,12 @@ export class ProofreadingManager {
     if (!this.preferenceManager.isAutoCorrectEnabled()) {
       return;
     }
-    if (!this.elementTracker.shouldAutoProofread(element)) {
-      const reason = this.elementTracker.resolveAutoProofreadIgnoreReason(element);
-      this.reportIgnoredElement(element, reason);
-      return;
+    if (!this.elementTracker.isRegistered(element)) {
+      if (!this.elementTracker.shouldAutoProofread(element)) {
+        const reason = this.elementTracker.resolveAutoProofreadIgnoreReason(element);
+        this.reportIgnoredElement(element, reason);
+        return;
+      }
     }
     this.issueManager.clearMessage(element);
     this.registerElement(element);
@@ -397,11 +382,6 @@ export class ProofreadingManager {
           if (!this.preferenceManager.isAutoCorrectEnabled()) {
             return;
           }
-          if (!this.elementTracker.shouldAutoProofread(element)) {
-            const reason = this.elementTracker.resolveAutoProofreadIgnoreReason(element);
-            this.reportIgnoredElement(element, reason);
-            return;
-          }
           void this.proofreadingService.proofread(element);
         },
         onUnderlineClick: (issueId, pageRect, anchorNode) => {
@@ -437,8 +417,8 @@ export class ProofreadingManager {
         onInvalidateIssues: () => {
           if (!this.proofreadingService.isRestoringFromHistory(element)) {
             const handler = this.targetHandlers.get(element);
-            handler?.clearHighlights();
-            this.clearElementState(element, { silent: true });
+            handler?.clearSelection();
+            this.softInvalidateElement(element);
           }
         },
         initialPalette: this.preferenceManager.buildIssuePalette(),
@@ -446,20 +426,65 @@ export class ProofreadingManager {
         initialAutofixOnDoubleClick: this.preferenceManager.isAutofixOnDoubleClickEnabled(),
       });
     } else {
-      handler = new DirectTargetHandler(element, {
-        highlighter: this.highlighter,
-        onCorrectionApplied: (updatedCorrections) => {
-          this.handleCorrectionsChange(element, updatedCorrections);
+      handler = new ContentEditableTargetHandler(element, {
+        onUnderlineClick: (issueId, pageRect, anchorNode) => {
+          this.activeSessionElement = element;
+          const correction = this.issueManager.getCorrection(element, issueId);
+          if (!correction) {
+            return;
+          }
+          const anchorX = pageRect.left + pageRect.width / 2;
+          const anchorY = pageRect.top + pageRect.height;
+          const positionResolver = anchorNode
+            ? () => {
+                if (!anchorNode.isConnected) {
+                  return null;
+                }
+                const rect = anchorNode.getBoundingClientRect();
+                return {
+                  x: rect.left + rect.width / 2,
+                  y: rect.top + rect.height,
+                };
+              }
+            : undefined;
+          this.showPopoverForCorrection(element, correction, anchorX, anchorY, positionResolver);
         },
-        onApplyCorrection: (correction) => {
+        onUnderlineDoubleClick: (issueId) => {
+          const correction = this.issueManager.getCorrection(element, issueId);
+          if (!correction) {
+            return;
+          }
           this.proofreadingService.applyCorrection(element, correction);
           this.issueManager.scheduleIssuesUpdate();
         },
+        onInvalidateIssues: () => {
+          if (!this.proofreadingService.isRestoringFromHistory(element)) {
+            const handler = this.targetHandlers.get(element);
+            handler?.clearSelection();
+            this.softInvalidateElement(element);
+          }
+        },
+        onNeedProofread: () => {
+          if (!this.preferenceManager.isAutoCorrectEnabled()) {
+            return;
+          }
+          void this.proofreadingService.proofread(element);
+        },
+        initialPalette: this.preferenceManager.buildIssuePalette(),
+        initialUnderlineStyle: this.preferenceManager.getUnderlineStyle(),
+        initialAutofixOnDoubleClick: this.preferenceManager.isAutofixOnDoubleClickEnabled(),
       });
     }
 
     handler.attach();
     this.targetHandlers.set(element, handler);
+  }
+
+  private softInvalidateElement(element: HTMLElement): void {
+    this.popoverManager.hide();
+    if (this.activeSessionElement === element) {
+      this.activeSessionElement = null;
+    }
   }
 
   private clearElementState(element: HTMLElement, options: { silent?: boolean } = {}): void {
@@ -529,7 +554,6 @@ export class ProofreadingManager {
   }
 
   private handlePopoverHide(): void {
-    this.highlighter.clearSelection();
     if (this.activeSessionElement) {
       const handler = this.targetHandlers.get(this.activeSessionElement);
       handler?.clearSelection();
@@ -622,7 +646,7 @@ export class ProofreadingManager {
     if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
       return element.value;
     }
-    return element.textContent || '';
+    return extractContentEditableText(element);
   }
 
   private reportIgnoredElement(element: HTMLElement, reason: ProofreadLifecycleReason): void {
