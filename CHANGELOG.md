@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.6.0](https://github.com/onderceylan/proofly/compare/v0.5.0...v0.6.0) (2026-05-07)
+
+
+### Continuous Integration
+
+* update workflow triggers ([1a55207](https://github.com/onderceylan/proofly/commit/1a5520772278f5bb615bb76f18ca1181686f9c72))
+
+
+### Documentation
+
+* add link to the promo video ([#24](https://github.com/onderceylan/proofly/issues/24)) ([7bac385](https://github.com/onderceylan/proofly/commit/7bac385116e5be80c515d0494326ea7117e91770))
+* update project details ([#22](https://github.com/onderceylan/proofly/issues/22)) ([fae99a4](https://github.com/onderceylan/proofly/commit/fae99a40cd74c01f5445b0bcb4041437a133ab67))
+
+
+### Features
+
+* improve downloader UI accuracy and ergonomics ([#26](https://github.com/onderceylan/proofly/issues/26)) ([98526c4](https://github.com/onderceylan/proofly/commit/98526c4c0d133187fc4225ae26f4f415df573b40))
+
 ## [0.5.0](https://github.com/onderceylan/proofly/compare/v0.4.5...v0.5.0) (2025-11-25)
 
 
