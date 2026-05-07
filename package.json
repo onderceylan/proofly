@@ -19,7 +19,7 @@
     "prepare": "husky"
   },
   "devDependencies": {
-    "@crxjs/vite-plugin": "^2.0.3",
+    "@crxjs/vite-plugin": "2.0.3",
     "@types/chrome": "^0.1.29",
     "@types/dom-chromium-ai": "^0.0.10",
     "@types/node": "^24.9.2",
@@ -27,7 +27,7 @@
     "eslint": "^9.39.1",
     "globals": "^15.15.0",
     "husky": "^9.1.7",
-    "pino": "^10.1.0",
+    "pino": "^10.1.1",
     "prettier": "^3.6.2",
     "puppeteer-core": "^24.27.0",
     "typescript": "~5.8.3",
