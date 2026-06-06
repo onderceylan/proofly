@@ -1,6 +1,7 @@
 import { logger } from '../services/logger.ts';
 import { ProofreadingManager } from './proofreading-manager.ts';
-import { isModelReady } from '../shared/utils/storage.ts';
+import { isModelReady, getStorageValues } from '../shared/utils/storage.ts';
+import { STORAGE_KEYS } from '../shared/constants.ts';
 import { ensureProofreaderModelReady } from '../services/model-checker.ts';
 import { installDevSidepanelButton } from './dev-sidepanel-button.ts';
 
@@ -11,7 +12,11 @@ async function initProofreading() {
 
   try {
     await installDevSidepanelButton();
-    await ensureProofreaderModelReady();
+
+    const { modelSource } = await getStorageValues([STORAGE_KEYS.MODEL_SOURCE]);
+    if (modelSource !== 'api') {
+      await ensureProofreaderModelReady();
+    }
 
     const modelReady = await isModelReady();
     logger.info({ modelReady }, 'Model ready check:');

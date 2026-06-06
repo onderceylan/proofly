@@ -1,5 +1,17 @@
 export type UnderlineStyle = 'solid' | 'wavy' | 'dotted';
 
+export type ModelSource = 'local' | 'api';
+
+export type ApiType = 'claude' | 'gemini' | 'openai-compatible';
+
+export interface ApiConfig {
+  type: ApiType;
+  apiUrl: string;
+  apiKey: string;
+  selectedModel: string;
+  selectedModelDisplayName: string;
+}
+
 export type CorrectionType =
   | 'spelling'
   | 'grammar'

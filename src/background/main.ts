@@ -1,7 +1,12 @@
 import { STORAGE_KEYS } from '../shared/constants.ts';
-import { initializeStorage, onStorageChange } from '../shared/utils/storage.ts';
+import { initializeStorage, onStorageChange, getStorageValue } from '../shared/utils/storage.ts';
 import { logger } from '../services/logger.ts';
-import { handleProofreadRequest, resetProofreaderServices } from './proofreader-proxy.ts';
+import {
+  handleProofreadRequest,
+  resetProofreaderServices,
+  updateModelSourceCache,
+} from './proofreader-proxy.ts';
+import { getApiProvider } from '../services/api-proofreader.ts';
 
 import type {
   IssuesUpdatePayload,
@@ -13,6 +18,8 @@ import type {
   ProofreadRequestMessage,
   ProofreaderBusyStateRequestMessage,
   ProofreaderBusyStateResponseMessage,
+  ApiTestConnectionResponse,
+  ApiFetchModelsResponse,
 } from '../shared/messages/issues.ts';
 import { serializeError } from '../shared/utils/serialize.ts';
 import { handleSidepanelToggleEvent } from './sidepanel-button-handler.ts';
@@ -285,14 +292,25 @@ function registerBadgeListeners(): void {
     void updateActionBadge();
   });
 
+  onStorageChange(STORAGE_KEYS.MODEL_SOURCE, (newValue) => {
+    updateModelSourceCache(newValue);
+    resetProofreaderServices();
+  });
+
+  onStorageChange(STORAGE_KEYS.API_CONFIG, () => {
+    resetProofreaderServices();
+  });
+
   badgeListenersRegistered = true;
 }
 
 registerBadgeListeners();
 void updateActionBadge();
+void getStorageValue(STORAGE_KEYS.MODEL_SOURCE).then(updateModelSourceCache);
 
 chrome.runtime.onInstalled.addListener(async (details) => {
   await initializeStorage();
+  updateModelSourceCache(await getStorageValue(STORAGE_KEYS.MODEL_SOURCE));
   logger.info({ reason: details?.reason }, 'Proofly extension installed and storage initialized');
 
   chrome.contextMenus.create({
@@ -316,6 +334,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 
 chrome.runtime.onStartup.addListener(async () => {
   await initializeStorage();
+  updateModelSourceCache(await getStorageValue(STORAGE_KEYS.MODEL_SOURCE));
   logger.info('Proofly extension started');
 
   registerBadgeListeners();
@@ -388,6 +407,45 @@ chrome.runtime.onMessage.addListener((message: ProoflyMessage, sender, sendRespo
 
   if (message.type === 'proofly:open-sidepanel-dev') {
     return handleSidepanelToggleEvent(sendResponse, sender, message);
+  }
+
+  if (message.type === 'proofly:api-test-connection') {
+    getStorageValue(STORAGE_KEYS.API_CONFIG)
+      .then((apiConfig) => {
+        const provider = getApiProvider(apiConfig.type);
+        return provider.testConnection(apiConfig);
+      })
+      .then((result) => {
+        sendResponse({
+          ok: result.ok,
+          message: result.message,
+        } satisfies ApiTestConnectionResponse);
+      })
+      .catch((error) => {
+        sendResponse({
+          ok: false,
+          message: error instanceof Error ? error.message : 'Unknown error',
+        } satisfies ApiTestConnectionResponse);
+      });
+    return true;
+  }
+
+  if (message.type === 'proofly:api-fetch-models') {
+    getStorageValue(STORAGE_KEYS.API_CONFIG)
+      .then((apiConfig) => {
+        const provider = getApiProvider(apiConfig.type);
+        return provider.fetchModels(apiConfig);
+      })
+      .then((models) => {
+        sendResponse({ ok: true, models } satisfies ApiFetchModelsResponse);
+      })
+      .catch((error) => {
+        sendResponse({
+          ok: false,
+          message: error instanceof Error ? error.message : 'Failed to fetch models',
+        } satisfies ApiFetchModelsResponse);
+      });
+    return true;
   }
 
   return false;

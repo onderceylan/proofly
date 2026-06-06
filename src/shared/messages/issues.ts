@@ -167,6 +167,25 @@ export interface DevOpenSidepanelMessage {
   };
 }
 
+export interface ApiTestConnectionMessage {
+  type: 'proofly:api-test-connection';
+}
+
+export interface ApiTestConnectionResponse {
+  ok: boolean;
+  message: string;
+}
+
+export interface ApiFetchModelsMessage {
+  type: 'proofly:api-fetch-models';
+}
+
+export interface ApiFetchModelsResponse {
+  ok: boolean;
+  models?: Array<{ id: string; displayName: string }>;
+  message?: string;
+}
+
 export type ProoflyMessage =
   | IssuesUpdateMessage
   | ApplyIssueMessage
@@ -180,7 +199,9 @@ export type ProoflyMessage =
   | ProofreadRequestMessage
   | ProofreaderBusyStateRequestMessage
   | ProofreaderBusyStateResponseMessage
-  | DevOpenSidepanelMessage;
+  | DevOpenSidepanelMessage
+  | ApiTestConnectionMessage
+  | ApiFetchModelsMessage;
 
 export function toSidepanelIssue(
   elementId: string,

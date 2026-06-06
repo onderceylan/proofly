@@ -4,17 +4,28 @@ import {
   createProofreaderAdapter,
   createProofreadingService,
 } from '../services/proofreader.ts';
+import { getApiProvider } from '../services/api-proofreader.ts';
 import type {
   ProofreadRequestMessage,
   ProofreadResponse,
   ProofreadServiceErrorCode,
 } from '../shared/messages/issues.ts';
+import { getStorageValues } from '../shared/utils/storage.ts';
+import { STORAGE_KEYS } from '../shared/constants.ts';
 import { serializeError } from '../shared/utils/serialize.ts';
+import type { ModelSource } from '../shared/types.ts';
 
 const DEFAULT_FALLBACK_LANGUAGE = 'en';
 
 const proofreaderServices = new Map<string, ReturnType<typeof createProofreadingService>>();
+let apiProofreaderService: ReturnType<typeof createProofreadingService> | null = null;
 let activeOperations = 0;
+
+let cachedModelSource: ModelSource = 'local';
+
+export function updateModelSourceCache(source: ModelSource): void {
+  cachedModelSource = source;
+}
 
 const getLanguageCacheKey = (language: string): string =>
   language.trim().toLowerCase() || DEFAULT_FALLBACK_LANGUAGE;
@@ -39,6 +50,22 @@ const isUnsupportedLanguageError = (error: unknown): boolean => {
   }
   return message.includes('language options') || message.includes('unsupported language');
 };
+
+async function getOrCreateApiProofreaderService(): Promise<
+  ReturnType<typeof createProofreadingService>
+> {
+  if (apiProofreaderService) {
+    return apiProofreaderService;
+  }
+
+  const { apiConfig } = await getStorageValues([STORAGE_KEYS.API_CONFIG]);
+  logger.info({ model: apiConfig.selectedModel }, 'Initializing API proofreader service');
+
+  const provider = getApiProvider(apiConfig.type);
+  const proofreader = provider.createProofreader(apiConfig);
+  apiProofreaderService = createProofreadingService(proofreader);
+  return apiProofreaderService;
+}
 
 async function getOrCreateProofreaderServiceForLanguage(
   language: string,
@@ -75,10 +102,16 @@ export async function handleProofreadRequest(
 
   activeOperations += 1;
   try {
-    const service = await getOrCreateProofreaderServiceForLanguage(
-      requestedLanguage,
-      normalizedFallback
-    );
+    let service: ReturnType<typeof createProofreadingService>;
+    if (cachedModelSource === 'api') {
+      service = await getOrCreateApiProofreaderService();
+    } else {
+      service = await getOrCreateProofreaderServiceForLanguage(
+        requestedLanguage,
+        normalizedFallback
+      );
+    }
+
     const result = await service.proofread(text);
     logger.info(
       {
@@ -132,6 +165,8 @@ export function resetProofreaderServices(): void {
   }
   proofreaderServices.forEach((service) => service.destroy());
   proofreaderServices.clear();
+  apiProofreaderService?.destroy();
+  apiProofreaderService = null;
 }
 
 export function isProofreaderProxyBusy(): boolean {

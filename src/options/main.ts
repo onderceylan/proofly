@@ -6,6 +6,7 @@ import { debounce } from '../shared/utils/debounce.ts';
 import {
   isModelReady,
   getStorageValues,
+  getStorageValue,
   onStorageChange,
   setStorageValue,
 } from '../shared/utils/storage.ts';
@@ -17,6 +18,7 @@ import {
   createProofreader,
   createProofreaderAdapter,
   createProofreadingService,
+  type IProofreader,
 } from '../services/proofreader.ts';
 import {
   createProofreadingController,
@@ -45,6 +47,7 @@ import {
   type IssuesUpdateMessage,
   type IssuesUpdatePayload,
 } from '../shared/messages/issues.ts';
+import { setupApiConfigSection } from './api-config-section.ts';
 
 const LIVE_TEST_SAMPLE_TEXT = `i love how Proofly help proofread any of my writting at web in a fully privet way, the user-experience is topnotch and immensly helpful.`;
 
@@ -62,10 +65,43 @@ interface LiveTestAreaOptions {
   isAutoCorrectEnabled: () => boolean;
 }
 
+function createBackgroundProofreaderAdapter(): IProofreader {
+  return {
+    async proofread(text: string) {
+      const requestId = `options-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      return new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage(
+          {
+            type: 'proofly:proofread-request',
+            payload: { requestId, text, language: 'en', fallbackLanguage: 'en' },
+          },
+          (response) => {
+            if (chrome.runtime.lastError) {
+              reject(new Error(chrome.runtime.lastError.message));
+              return;
+            }
+            if (response?.ok) {
+              resolve(response.result);
+            } else {
+              reject(new Error(response?.error?.message ?? 'Proofread request failed'));
+            }
+          }
+        );
+      });
+    },
+    destroy() {},
+  };
+}
+
 async function initOptions() {
   const app = document.querySelector<HTMLDivElement>('#app')!;
 
-  await ensureProofreaderModelReady();
+  const modelSource = await getStorageValue(STORAGE_KEYS.MODEL_SOURCE);
+  const isApiMode = modelSource === 'api';
+
+  if (!isApiMode) {
+    await ensureProofreaderModelReady();
+  }
 
   const modelReady = await isModelReady();
 
@@ -82,10 +118,43 @@ async function initOptions() {
           </div>
         </header>
         <main>
+          <section class="settings-section full-width">
+            <h2>AI Source</h2>
+            <p class="section-description">Choose how Proofly accesses the AI model for proofreading.</p>
+            <div class="section-items">
+              <div class="source-selector">
+                <label class="source-option">
+                  <input type="radio" name="modelSource" value="local" checked />
+                  <div class="source-option-content">
+                    <strong>Local Model</strong>
+                    <p>Uses Chrome's built-in AI. Private and fully offline.</p>
+                  </div>
+                </label>
+                <label class="source-option">
+                  <input type="radio" name="modelSource" value="api" />
+                  <div class="source-option-content">
+                    <strong>API</strong>
+                    <p>Uses an external AI API (e.g. Claude, Gemini).</p>
+                  </div>
+                </label>
+              </div>
+            </div>
+          </section>
           <proofly-model-downloader></proofly-model-downloader>
         </main>
       </div>
     `;
+
+    const welcomeSourceRadios = Array.from(
+      app.querySelectorAll<HTMLInputElement>('input[name="modelSource"]')
+    );
+    welcomeSourceRadios.forEach((radio) => {
+      radio.addEventListener('change', async () => {
+        if (!radio.checked || radio.value !== 'api') return;
+        await setStorageValue(STORAGE_KEYS.MODEL_SOURCE, 'api');
+        location.reload();
+      });
+    });
 
     const downloader = app.querySelector('proofly-model-downloader');
     downloader?.addEventListener('download-complete', () => {
@@ -266,8 +335,69 @@ async function initOptions() {
         </header>
         <main>
           <section class="settings-section full-width">
+            <h2>AI Source</h2>
+            <p class="section-description">Choose how Proofly accesses the AI model for proofreading.</p>
+            <div class="section-items">
+              <div class="source-selector">
+                <label class="source-option">
+                  <input type="radio" name="modelSource" value="local" ${modelSource === 'local' ? 'checked' : ''} />
+                  <div class="source-option-content">
+                    <strong>Local Model</strong>
+                    <p>Uses Chrome's built-in AI. Private and fully offline.</p>
+                  </div>
+                </label>
+                <label class="source-option">
+                  <input type="radio" name="modelSource" value="api" ${modelSource === 'api' ? 'checked' : ''} />
+                  <div class="source-option-content">
+                    <strong>API</strong>
+                    <p>Uses an external AI API (e.g. Claude, Gemini).</p>
+                  </div>
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section class="settings-section full-width" id="apiConfigSection" ${modelSource !== 'api' ? 'hidden' : ''}>
+            <h2>API Configuration</h2>
+            <p class="section-description">Connect Proofly to an external AI API.</p>
+            <div class="section-items">
+              <div class="api-form">
+                <div class="form-field">
+                  <label for="apiType">Type</label>
+                  <select id="apiType">
+                    <option value="claude">Claude (Anthropic)</option>
+                    <option value="gemini">Gemini (Google)</option>
+                    <option value="openai-compatible">OpenAI Compatible</option>
+                  </select>
+                </div>
+                <div class="form-field">
+                  <label for="apiUrl">API URL</label>
+                  <input type="url" id="apiUrl" placeholder="https://api.anthropic.com" />
+                  <span id="apiUrlHint" class="field-hint">Base URL for the API</span>
+                </div>
+                <div class="form-field">
+                  <label for="apiKey">API Key <span class="field-optional">(optional)</span></label>
+                  <div class="api-key-wrapper">
+                    <input type="password" id="apiKey" placeholder="sk-ant-..." autocomplete="off" />
+                    <button type="button" id="toggleApiKey" class="btn-icon">Show</button>
+                  </div>
+                </div>
+                <div class="api-actions">
+                  <button type="button" id="testConnectionBtn" class="btn-primary">Test connection</button>
+                  <button type="button" id="fetchModelsBtn" class="btn-secondary">Fetch models</button>
+                  <span id="connectionStatus" class="connection-status"></span>
+                </div>
+                <div class="form-field" id="modelSelectField" hidden>
+                  <label for="selectedModel">Model</label>
+                  <select id="selectedModel"></select>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="settings-section full-width" id="localModelStatus" ${modelSource === 'api' ? 'hidden' : ''}>
             <h2>Model Status</h2>
-            <p class="section-description">Review the status of AI models.</p>
+            <p class="section-description">Review the status of the local AI model.</p>
             <div class="section-items">
               <div class="status-card">
                 <div class="status-indicator ready"></div>
@@ -701,13 +831,33 @@ async function initOptions() {
       updateShortcutDisplay();
     });
 
+    // ── AI Source + API Configuration (delegated) ──────────────────────────
+    const apiConfig = await getStorageValue(STORAGE_KEYS.API_CONFIG);
+    setupApiConfigSection({
+      initialModelSource: modelSource,
+      initialApiConfig: apiConfig,
+      onModelSourceChange: () => {},
+    });
+
     // Setup live test area proofreading
+    const liveTestProofreader: IProofreader | null = isApiMode
+      ? createBackgroundProofreaderAdapter()
+      : await (async () => {
+          try {
+            const proofreader = await createProofreader();
+            return createProofreaderAdapter(proofreader);
+          } catch {
+            return null;
+          }
+        })();
+
     liveTestControls = await setupLiveTestArea(
       currentEnabledCorrectionTypes,
       correctionColorConfig,
       {
         isAutoCorrectEnabled: () => autoCorrectEnabled,
-      }
+      },
+      liveTestProofreader
     );
 
     // Handle apply issue and apply all messages from sidepanel
@@ -754,7 +904,8 @@ async function initOptions() {
 async function setupLiveTestArea(
   initialEnabledTypes: CorrectionTypeKey[],
   initialColorConfig: CorrectionColorConfig,
-  options: LiveTestAreaOptions
+  options: LiveTestAreaOptions,
+  proofreaderAdapter: IProofreader | null = null
 ): Promise<LiveTestControls | null> {
   const editor = document.getElementById('liveTestEditor');
   if (!editor) return null;
@@ -778,13 +929,17 @@ async function setupLiveTestArea(
 
   let proofreaderService: ReturnType<typeof createProofreadingService> | null = null;
 
-  try {
-    const proofreader = await createProofreader();
-    const adapter = createProofreaderAdapter(proofreader);
-    proofreaderService = createProofreadingService(adapter);
-  } catch (error) {
-    logger.error({ error }, 'Failed to initialize proofreader for live test area');
-    return null;
+  if (proofreaderAdapter) {
+    proofreaderService = createProofreadingService(proofreaderAdapter);
+  } else {
+    try {
+      const proofreader = await createProofreader();
+      const adapter = createProofreaderAdapter(proofreader);
+      proofreaderService = createProofreadingService(adapter);
+    } catch (error) {
+      logger.error({ error }, 'Failed to initialize proofreader for live test area');
+      return null;
+    }
   }
 
   const reportProofreaderBusy = (busy: boolean) => {

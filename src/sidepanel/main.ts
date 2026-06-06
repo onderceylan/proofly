@@ -3,7 +3,8 @@ import './components/issues-panel.ts';
 import './style.css';
 
 import { logger } from '../services/logger.ts';
-import { isModelReady } from '../shared/utils/storage.ts';
+import { isModelReady, getStorageValues } from '../shared/utils/storage.ts';
+import { STORAGE_KEYS } from '../shared/constants.ts';
 import type {
   ApplyAllIssuesMessage,
   IssuesStateRequestMessage,
@@ -54,7 +55,10 @@ async function initSidepanel(): Promise<void> {
 
   document.body.classList.add('prfly-page');
 
-  await ensureProofreaderModelReady();
+  const { modelSource } = await getStorageValues([STORAGE_KEYS.MODEL_SOURCE]);
+  if (modelSource !== 'api') {
+    await ensureProofreaderModelReady();
+  }
 
   const modelReady = await isModelReady();
   if (!modelReady) {
